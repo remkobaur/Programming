@@ -1,7 +1,7 @@
 # Ein array fasst mehrere Elemente eines Typs in einer variable zusammen
 # arrays werden definiert mit []
 
-wait_activated = False
+wait_activated = True
 
 def my_title(title):
     print(f"\n>>> {title} <<<")
@@ -44,7 +44,6 @@ for r,row in enumerate(D):
     for c,val in enumerate(row): 
         s+=f"\t{val}"
     print(f"row {r} = [{s}] ")
-    
     
 # dictionary, alias dict ist eine Erweiterung des des Array ähnlich einer Tabelle
 # - eine dict wird mit {...} deklariert 

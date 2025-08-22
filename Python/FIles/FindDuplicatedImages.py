@@ -28,6 +28,9 @@ def get_fileDict(fileName):
 
 def findDuplicateList_Dict(item_list,keep_subFolders,remove_subFolders):
     resultDict ={}
+    # item_list = sorted(item_list, key=len)
+    item_list.sort(key = lambda x:len(os.path.dirname(os.path.abspath(x))))
+    
     
     search_list = copy.deepcopy(item_list)    
     for item in item_list :
@@ -36,7 +39,7 @@ def findDuplicateList_Dict(item_list,keep_subFolders,remove_subFolders):
             continue
         
         searchName = pathlib.Path(item).stem
-        # search_list.remove(item)
+        search_list.remove(item)
         # find all files with same name
         sameNameList = [f for f in search_list if searchName in f]      
         
@@ -47,11 +50,13 @@ def findDuplicateList_Dict(item_list,keep_subFolders,remove_subFolders):
                 # compare size                        
                 if os.path.getsize(item) == os.path.getsize(k): # or True:
                     # print(f" + {k}") 
-                    sameFileDictList.append(get_fileDict(k))
-                    search_list.remove(k)       
+                    sameFileDictList.append(get_fileDict(k)) 
+                    # search_list.remove(k)                         
                 else:
                     # print(f"\t! Diff Size {k} --> size = {os.path.getsize(k)} --> org size = {os.path.getsize(item)}")
                     pass
+            if len(sameFileDictList)==0:
+                continue    
                 
             for  k in sameFileDictList:
                 # if any remove_subFolder is in path --> tag = remove
@@ -76,8 +81,11 @@ def findDuplicateList_Dict(item_list,keep_subFolders,remove_subFolders):
                     else:
                         pass                                
                     #filename in other filename              
-                    if k['Stem'] in f['File'] :  
-                        f['Tag'] = 'Stem in File'
+                    if k['Stem'] in f['File'] : 
+                        if  k['File'] ==  f['File']:
+                            f['Tag'] = 'SameFileName'
+                        else:
+                            f['Tag'] = 'Stem in File'
                         f['Delete'] = 'x'
                         continue               
                         
@@ -87,7 +95,12 @@ def findDuplicateList_Dict(item_list,keep_subFolders,remove_subFolders):
                 for k in sameFileDictList:
                     if not k['Tag'] in ['keep','rescue_keep']:
                         k['Delete'] = 'x'
-            
+            for k in sameFileDictList:
+                if k['Tag']  == '':
+                    k['Tag'] ='unTouched'
+                else:
+                    search_list.remove(k['FullPath'])  
+                    pass
             if len(sameFileDictList)>1:
                 resultDict[pathlib.Path(item).stem]=sameFileDictList
                 
@@ -103,7 +116,7 @@ def xlsExport_ValidatedDuplicateList(AnalysisResults,OutputFile):
 
 def delete_DuplicatedFiles(AnalysisResults,deleteFiles):
     del_count = 0
-    for sameFileDictList in AnalysisResults:
+    for key,sameFileDictList in AnalysisResults.items():
         for  k in sameFileDictList:
             if k['Delete'] == 'x':
                 print(f"Delete: {k['FullPath']}")
@@ -112,18 +125,98 @@ def delete_DuplicatedFiles(AnalysisResults,deleteFiles):
                 del_count+=1
     print(f"{del_count} images deleted")
 
-remove_subFolders = ['Afterworld','Dias']
-keep_subFolders = ['Best','best','uswahl']
-rootdir_glob = r'C:\GIT\_TestData'
-
-# year = '2023'
-# keep_subFolders = ['Best','best','uswahl',f'{year}\\{year}',f'{year}\\0',f'{year}\\1']
-# rootdir_glob = r'\\ir_medserv\photo\DCIM-Handy\Remko' +f'\\{year}'
-
-item_list = get_ImageList_for_folderTree(rootdir_glob)
-AnalysisResults=findDuplicateList_Dict(item_list,keep_subFolders,remove_subFolders)
-xlsExport_ValidatedDuplicateList(AnalysisResults,'douplicate_List.xlsx')
-# delete_DuplicatedFiles(AnalysisResults,deleteFiles=False)
 
 
+def testing1():
+    remove_subFolders = ['Afterworld','Dias']
+    keep_subFolders = ['Best','best','uswahl']
+
+    item_list = get_ImageList_for_folderTree(rootdir_glob = r'C:\GIT\_TestData')
+
+    AnalysisResults=findDuplicateList_Dict(item_list,keep_subFolders,remove_subFolders)
+    xlsExport_ValidatedDuplicateList(AnalysisResults,'douplicate_List.xlsx')
+    delete_DuplicatedFiles(AnalysisResults,deleteFiles=False)
+    
+def testing2():
+    remove_subFolders = ['Afterworld','Dias']
+    keep_subFolders= []
+    rootdir_glob = r'C:\GIT\_TestData'
+
+    keep_subFolders= []
+
+    item_list=[]
+    #item_list += get_ImageList_for_folderTree(rootdir_glob = r'C:\GIT\_TestData')
+
+    item_list += get_ImageList_for_folderTree(rootdir_glob = r'C:\GIT\_TestData\root1')
+    item_list += get_ImageList_for_folderTree(rootdir_glob = r'C:\GIT\_TestData\root02')
+
+    AnalysisResults=findDuplicateList_Dict(item_list,keep_subFolders,remove_subFolders)
+    xlsExport_ValidatedDuplicateList(AnalysisResults,'douplicate_List.xlsx')
+    delete_DuplicatedFiles(AnalysisResults,deleteFiles=False)
+
+def testing3():
+    remove_subFolders = ['Afterworld','Dias']
+    keep_subFolders= []
+    rootdir_glob = r'C:\GIT\_TestData'
+
+    keep_subFolders= []
+
+    item_list=[]
+    item_list += get_ImageList_for_folderTree(rootdir_glob = r'C:\GIT\_TestData1')
+    item_list += get_ImageList_for_folderTree(rootdir_glob = r'C:\GIT\_TestData2')
+
+    AnalysisResults=findDuplicateList_Dict(item_list,keep_subFolders,remove_subFolders)
+    xlsExport_ValidatedDuplicateList(AnalysisResults,'douplicate_List.xlsx')
+    delete_DuplicatedFiles(AnalysisResults,deleteFiles=False)
+ 
+def process_folder(root = r'\\IR_MedServ\photo\Events\2014_09_27_Detmerode_Wald'):
+    remove_subFolders = ['Afterworld','Dias']
+    keep_subFolders = ['Best','best','uswahl']
+    
+    item_list = get_ImageList_for_folderTree(rootdir_glob = root)
+
+    AnalysisResults=findDuplicateList_Dict(item_list,keep_subFolders,remove_subFolders)
+    xlsExport_ValidatedDuplicateList(AnalysisResults,'douplicate_List.xlsx')
+    delete_DuplicatedFiles(AnalysisResults,deleteFiles=False) 
+ 
+def process_forEachSubfolder(root =r'\\IR_MedServ\photo\Events'):
+    remove_subFolders = []
+    keep_subFolders = ['Best','best','uswahl']
+    skip_subFolders = ['0_Remko','0_Ira']
+            
+    
+    dirname = Path(root)
+    subfolders = [f.name for f in dirname.iterdir() if f.is_dir()]
+    subfolders.sort()
+    for sf in subfolders:
+        if sf in skip_subFolders:
+            continue        
+        item_list = get_ImageList_for_folderTree(rootdir_glob = os.path.join(root,sf))
+        AnalysisResults=findDuplicateList_Dict(item_list,keep_subFolders,remove_subFolders)
+        delete_DuplicatedFiles(AnalysisResults,deleteFiles=False)
         
+def process_forEachSubfolder_secondRoot(root =r'\\IR_MedServ\photo\Events', secondFolder=r'\\IR_MedServ\photo\share'):
+    remove_subFolders = []
+    keep_subFolders = ['Best','best','uswahl']
+    skip_subFolders = ['0_Remko','0_Ira']
+            
+    
+    dirname = Path(root)
+    subfolders = [f.name for f in dirname.iterdir() if f.is_dir()]
+    subfolders.sort()
+    for sf in subfolders:
+        if sf in skip_subFolders:
+            continue        
+        item_list = get_ImageList_for_folderTree(rootdir_glob = os.path.join(root,sf))
+        item_list += get_ImageList_for_folderTree(rootdir_glob = secondFolder)
+        AnalysisResults=findDuplicateList_Dict(item_list,keep_subFolders,remove_subFolders)
+        delete_DuplicatedFiles(AnalysisResults,deleteFiles=False)
+        
+# testing1()
+# testing2()
+# testing3()
+# process()
+process_folder(r'\\IR_MedServ\photo\Events\2022_12_24_Weihnachten_Dresden')
+# process_folder(r'C:\GIT\_TestData')
+# process_forEachSubfolder(r'\\IR_MedServ\photo\DCIM-Handy\Remko')
+# process_forEachSubfolder_secondRoot(r'\\IR_MedServ\photo\Events',r'\\IR_MedServ\photo\share')
