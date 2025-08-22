@@ -1,0 +1,204 @@
+%% http://ais.informatik.uni-freiburg.de/teaching/ws12/mapping/pdf/slam05-ukf.pdf --> pp.20
+
+function UKF_ScaleParam_Tuning_Demo_Propagation_V2
+
+P_0 = diag([4,9])*1e0;
+P_0 = [1,0.9;0.1,9];
+x_m = [2,1]';
+
+SET = {...
+    'alpha',[0.1,0.25,0.75,1,1.5];...
+    'beta',[0,0.5,1,2,5];...
+    'kappa',[0.1,0.5,1,5,10];...
+    };
+
+    C_subplots = 3;
+
+    figure(123521);clf;Color={'r','b','m','g','k'};
+    for p =1: size(SET,1)    
+        alpha = 1;
+        beta  = 2;
+        kappa = 1;
+    %     for v = 1:numel(SET{p,2})
+    %         subplot(R_subplots,C_subplots,(C_subplots*(p-1)+v))
+    %         eval(sprintf('%s = %e;',SET{p,1},SET{p,2}(v)) );
+    %         [X,Y,P_x,P_y] = do_for_oneSet(P_0,x_m,alpha,beta,kappa);
+    %         axis(gca,'equal')
+    %     end
+
+        leg = {};ah=[];sp=[];
+%         sp(1)=subplot(2,C_subplots,p);
+%         sp(2)=subplot(2,C_subplots,p+C_subplots);
+        sp(1)=subplot(C_subplots,2,2*p-1);
+        sp(2)=subplot(C_subplots,2,2*p);
+        for v = 1:numel(SET{p,2})
+            leg{v} = sprintf('\\%s = %5.2f ',SET{p,1},SET{p,2}(v));
+            eval(sprintf('%s = %e;',SET{p,1},SET{p,2}(v)) );
+            ah(v) = do_for_oneSet(P_0,x_m,alpha,beta,kappa,Color{v},sp);        
+            title(sp(1),['\text{variation of } ',SET{p,1}]);            
+            axes(sp(1));xlim([-2,6]);ylim([-10,15]);
+            fun_str = f();
+            title(sp(2),['\text{propagation } Y = ',fun_str]);
+%             axes(sp(2));xlim([-2,6]);ylim([-10,15]);
+        end
+        legend(ah,leg,'location','eastoutside');%axis(gca,'equal')
+    end
+    
+    make_tikz;
+    disp('\caption{Skalierte Unscented Transformation (SUT) unter Variation von $\alpha$, $\beta$ und $\kappa$} (Standardwerte: $\alpha = 1$ , $\beta = 2$ , $\kappa = 1$)')
+
+end
+
+function make_tikz
+    Opts.b_overwrite_tikz_tex      = 1 ;
+    Opts.b_hideXLabel              = 0 ;
+    Opts.b_smooth_Lines            = 0 ;
+    Opts.b_remakeTikzPicture       = 0 ;
+    Opts.max_DataPoints            = 2000 ;
+    Opts.LegPos                    = 'at={(1,0.5)},xshift = 0.4cm,anchor = west,' ;
+    Opts.AxesHeight                = '7.0cm' ;
+    Opts.AxesWidth                 = 0.42 ;
+    Opts.fontSize                  = '\Tiny' ;
+    Opts.delta_x                   = '1.40cm' ;
+    Opts.delta_y                   = '0.8cm' ;
+    Opts.xLabelShift               = ' 0.15cm' ;
+    Opts.yLabelShift               = ' -0.2cm' ;
+    Opts.TickMax                   = 4 ;
+    Opts.TicksMaxSpace             = 50 ;
+    Opts.SavePath                  = 'D:\Latex\01_Projekte\04_Planung\Dissertation\tikz\Schaetzprobleme' ;
+    Opts.SaveName                  = 'UKF-Scaling-ParameterVariation' ;
+    gen_PGFplots(Opts,gcf)
+end
+
+function ah = do_for_oneSet(P_x,x_m,alpha,beta,kappa,Color,sp)
+    % calculate sigma points
+    n = numel(x_m);
+    [WM,WC,c] = ut_get_weights(n,alpha,beta,kappa);
+    X = ut_get_sigmaPoints(x_m,P_x,c);
+    
+    % nonlinear tranformation / propagation
+    Y = X;
+    for z = 1: size(X,2)
+       Y(:,z) = f(X(:,z)); 
+    end
+    if any(isnan(Y))
+        disp(' -- isnan')
+    end
+    
+    % calculate mean and covariance
+    W = eye(length(WC)) - repmat(WM,1,length(WM));
+    W = W * diag(WC) * W';
+    y_m = Y*WM;
+    
+    %dX = X-M*ones(1,2*n+1);
+    dY = Y-y_m*ones(1,2*n+1);
+    P_y  = dY*W*dY';
+    % C  = dX*W*dY';
+    
+    % do plots    
+    subplot(sp(1));
+%     ah(1)=plot_cov_mean(x_m,X,P_x,Color);
+        plot_cov_mean(x_m,X,P_x,Color);
+        grid on;
+        xlabel('x_1');ylabel('x_2');
+    subplot(sp(2));
+        ah(1)=plot_cov_mean(y_m,Y,P_y,Color);
+        xlabel('y_1');ylabel('y_2')
+        grid on;    
+    title(sprintf('\\kappa = %.1f , \\alpha = %.2f , \\beta = %.2f',kappa,alpha,beta));    
+end
+
+function ah = plot_cov_mean(x_m,X,P_x,Color)
+    hold all;
+    plot(x_m(1),x_m(2),'color',Color,'marker','o','LineStyle','none');
+    ah= plot(X(1,:),X(2,:),'color',Color,'marker','x','LineStyle','none');
+    plot_Cov_elipse(X(:,1),P_x,Color); 
+    hold off
+end
+
+function ah = plot_Cov_elipse(x_m,P,Color)
+% http://www.visiondummy.com/2014/04/draw-error-ellipse-representing-covariance-matrix/
+   %(x/a)^2 + (y/b)^2 = 1
+   %  y =  +- b * sqrt(1 -(x/a)^2 )
+   
+    [EIG_vect,EIG] = eig(P);
+    [V_max,I_max] = max(max(EIG));
+    
+    Max_EIG = max(max(EIG));
+    [Max_eigenvec_ind_c, r] = find(EIG == Max_EIG);
+    Max_EIG_vect = EIG_vect(:,Max_eigenvec_ind_c);
+     
+    Min_EIG_vect = EIG_vect(:,(mod(Max_eigenvec_ind_c,2)+1));
+    Min_EIG = max( EIG(:,mod(Max_eigenvec_ind_c,2)+1) );
+    
+    
+    phi = atan2(Max_EIG_vect(2), Max_EIG_vect(1)); 
+    if(phi < 0) 
+        phi = phi + 2*pi; 
+    end
+    
+    % Get the 95% confidence interval error ellipse 
+    chisquare_val = 2.4477; 
+    alpha = linspace(0,2*pi); 
+
+    X0=x_m(1); 
+    Y0=x_m(2); 
+    a=chisquare_val*sqrt(Max_EIG); 
+    b=chisquare_val*sqrt(Min_EIG); 
+    % the ellipse in x and y coordinates 
+    ellipse_x_r = a*cos( alpha );
+    ellipse_y_r = b*sin( alpha ); 
+    %Define a rotation matrix 
+    R = [ cos(phi) sin(phi); -sin(phi) cos(phi) ]; 
+    %let's rotate the ellipse to some angle phi 
+    r_ellipse = ([ellipse_x_r;ellipse_y_r]' * R)' + x_m*ones(size(ellipse_y_r)); 
+    % Draw the error ellipse 
+    ah = plot(r_ellipse(1,:) ,r_ellipse(2,:),'color',Color); 
+end
+
+function y = f(x)
+    if nargin==0
+        y = '[sin(x(1));cos(x(2))]';
+        return
+    end
+%     y = x +[1,1]';
+%     y = x*sin(pi/4) +[x(2),x(1)]'*3;
+%     y=  x.^2;
+    y=  [sin(x(1));cos(x(2))];
+end
+
+function [WM,WC,c] = ut_get_weights(n,alpha,beta,kappa)
+%     [WM,WC,c] = ut_weights(n,alpha,beta,kappa);
+if isempty(alpha)
+alpha = 1;
+end
+if isempty(beta)
+beta = 0;
+end
+if isempty(kappa)
+kappa = 3 - n;
+end	  
+
+% Compute the normal weights 
+lambda = alpha^2 * (n + kappa) - n;
+
+dummy = 1 / (2 * (n + lambda));
+WM = ones(2*n+1,1)*dummy;
+WC = ones(2*n+1,1)*dummy;
+WM(1) = lambda / (n + lambda);
+WC(1) = lambda / (n + lambda) + (1 - alpha^2 + beta);
+% % % edit R. Baur
+% % % If kappa < 0 Then WC(1)=0
+% % %     if WC(1)<0  
+% % %         WC(1)=0;
+% % %     end
+
+c = n + lambda; 
+end
+
+function X = ut_get_sigmaPoints(M,P,c) 
+A = chol(P)';
+X = [zeros(size(M)) A -A];
+X = sqrt(c)*X + repmat(M,1,size(X,2));
+%     X(X<0)=0;
+end

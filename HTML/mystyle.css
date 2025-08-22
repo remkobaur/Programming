@@ -1,0 +1,176 @@
+      * {
+        margin: 0;
+        padding: 0;
+      }
+
+      /* Define --main-bg-color here */
+      :root {
+        --sidebar-width: 200px;
+      }
+
+      .container {
+        max-width: 666px;
+        margin: auto;
+        text-align: center;
+        background-color: #333333;
+        color: #ffffff;
+        padding-bottom: 10px;
+        margin-top: 10px;
+        border-radius:8px;
+      }
+      h1 {
+        padding: 10px 0;
+      }
+      .portrait {
+        width: 150px;
+        height: auto;
+        border-radius: 10%;
+      }
+      ul li {
+        list-style: none;
+        margin: 5px 0;
+      }
+      ul a {
+        padding: 12px 0;
+        width: 90%;
+        margin: auto;
+        border-color: #999999;
+        border-width: 1px;
+        border-style: solid;
+        display: inline-block;
+        color: #ffffff;
+        text-decoration: none;
+        background-color: #000000;
+      }
+      ul a:hover {
+        background-color: #153129;
+      }
+      body {
+        background-color: #705e35;
+        background-image: url("wallpaper.jpg");
+        background-size: cover;
+      }
+
+      /* The side navigation menu */
+      .sidebar {
+        margin: 0;
+        padding: 0;
+        width: var(--sidebar-width);
+        background-color: rgba(63, 15, 15, 0.719);
+        /* background-color: #000000; */
+        position: fixed;
+        height: 100%;
+        overflow: auto;
+      }
+      .sidebar h2{
+        color:rgb(189, 145, 2);
+      }
+
+      /* Sidebar links */
+      .sidebar a {
+        display: block;
+        background-color: #555;
+        color: black;
+        padding: 16px;
+        text-decoration: none;
+      }
+
+      /* Active/current link */
+      .sidebar a.active {
+        background-color: #04AA6D;
+        color: white;
+      }
+
+      /* Links on mouse-over */
+      .sidebar a:hover:not(.active) {
+        background-color: #555;
+        color: white;
+      }
+
+      /* Page content. The value of the margin-left property should match the value of the sidebar's width property */
+      .content {
+        margin-left: var(--sidebar-width);
+        padding: 1px 16px;
+        /* height: 1000px; */
+        text-align:center;        
+        /* align-items: center; */
+        justify-content: center;
+      }
+
+      /* On screens that are less than 700px wide, make the sidebar into a topbar */
+      @media screen and (max-width: 700px) {
+        .sidebar {
+          width: 100%;
+          height: auto;
+          position: relative;
+        }
+        .sidebar a {float: left;}
+        div.content {margin-left: 0;}
+      }
+
+      /* On screens that are less than 400px, display the bar vertically, instead of horizontally */
+      @media screen and (max-width: 400px) {
+        .sidebar a {
+          text-align: center;
+          float: none;
+        }
+      }
+
+      .search-bar-container{
+        /* width: 100%;
+        text-align:center;
+        align-items: center;
+        justify-content: center;    
+        background-size: cover; */
+
+        /* margin: auto; */
+        /* min-height: 100vh; */
+        /* padding: 20px; */
+        /* margin-top: 10px; */
+        /* text-align: center; */
+        /* background-position: center; */
+ 
+        max-width: 666px;
+        margin: auto;
+        text-align: center;
+        background-color: none;
+        color: #ffffff;
+        padding-bottom: 10px;
+        margin-top: 10px;
+      }
+
+      .search-bar{
+        width:95%;
+        max-width: 700px;
+        background: rgba(255, 255, 255, 0.274);
+        display: flex;
+        align-items: center;
+        border-radius: 60px;
+        padding: 10px 20px;
+        backdrop-filter: blur(4px) saturate(180%);
+      }
+
+      .search-bar input{
+        background: transparent;
+        flex: 1;
+        border: 0;
+        outline: none;
+        padding: 12px 20px;
+        font-size: 20px;
+        color: #cac7ff;
+      }
+      ::placeholder {
+        color: rgb(15, 15, 15);
+        opacity: 1; /* Firefox */
+      }
+      .search-bar button img{
+        width: 40px;
+      }
+      .search-bar button {
+        border:0;
+        border-radius:50%;
+        width: 50px;
+        height: 50px;
+        /* background: #58629b; */
+      }
+      

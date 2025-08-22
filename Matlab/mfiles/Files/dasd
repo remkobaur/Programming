@@ -1,0 +1,450 @@
+DstPath = F:\Hoerspiel\Tintenwelt\Music\
+Files = 
+{
+  [1,1] = 001 Musik - Im Dunkeln.mp3
+  [1,2] = 005 Musik - Furcht.mp3
+  [1,3] = 008 Musik - Das Tor.mp3
+  [1,4] = 011 Musik - Unterwegs.mp3
+  [1,5] = 015 Musik - Schaetze.mp3
+  [1,6] = 019 Musik - Erinnerung.mp3
+  [1,7] = 023 Musik - Gaukelei.mp3
+  [1,8] = 025 Musik - Blicke im Dunkeln.mp3
+  [1,9] = 027 Musik - Seitenweise.mp3
+  [1,10] = 031 Musik - Nostalgia (1).mp3
+  [1,11] = 033 Musik - Nostalgia (2).mp3
+  [1,12] = 035 Musik - Schlaflos.mp3
+  [1,13] = 038 Musik - Gedanken.mp3
+  [1,14] = 042 Musik - Herzklopfen.mp3
+  [1,15] = 045 Musik - Tristezza.mp3
+  [1,16] = 047 Musik - Malavita.mp3
+  [1,17] = 053 Musik - Traumbilder.mp3
+  [1,18] = 060 Musik - Silber und Gold.mp3
+  [1,19] = 065 Musik - In der Sonne.mp3
+  [1,20] = 070 Musik - La strada.mp3
+  [1,21] = 073 Musik - La macchia.mp3
+  [1,22] = 077 Musik - Giro.mp3
+  [1,23] = 080 Musik - Fragole.mp3
+  [1,24] = 084 Musik - Mondvogel.mp3
+  [1,25] = 088 Musik - Treffen.mp3
+  [1,26] = 090 Musik - Curiositá.mp3
+  [1,27] = 093 Musik - Reissaus.mp3
+  [1,28] = 095 Musik - La spia.mp3
+  [1,29] = 097 Musik - Gallo rosso.mp3
+  [1,30] = 099 Musik - Wuensche.mp3
+  [1,31] = 105 Musik - Verspielt.mp3
+  [1,32] = 108 Musik - Feuergeister.mp3
+  [1,33] = 111 Musik - Wendungen.mp3
+  [1,34] = 115 Musik - Besuch.mp3
+  [1,35] = 119 Musik - Nostalgia (3).mp3
+  [1,36] = 122 Musik - Solo.mp3
+  [1,37] = 124 Musik - Nostalgia (4).mp3
+  [1,38] = 126 Musik - Sfortunato.mp3
+  [1,39] = 129 Musik - Die zweite Stimme.mp3
+  [1,40] = 133 Musik - Zikaden.mp3
+  [1,41] = 135 Musik - Visione.mp3
+  [1,42] = 138 Musik - Pssst!.mp3
+  [1,43] = 142 Musik - Nachrichten.mp3
+  [1,44] = 145 Musik - Resa.mp3
+  [1,45] = 148 Musik - Schwarze Kunst.mp3
+  [1,46] = 150 Musik - Zaubersprueche.mp3
+  [1,47] = 153 Musik - Der Plan.mp3
+  [1,48] = 156 Musik - Helfer.mp3
+  [1,49] = 160 Musik - Bangen.mp3
+  [1,50] = 165 Musik - Nostalgia (5).mp3
+  [1,51] = 168 Musik - Arrividerci.mp3
+  [1,52] = 170 Musik - Contra.mp3
+  [1,53] = 173 Musik - Welten.mp3
+  [1,54] = 176 Musik - Papier.mp3
+  [1,55] = 179 Musik - Flammen.mp3
+  [1,56] = 182 Musik - Parole.mp3
+  [1,57] = 187 Musik - Leben und Tod.mp3
+  [1,58] = 190 Musik - Grillen, Feen und Kobolde.mp3
+  [1,59] = 193 Musik - Zwischenwelt.mp3
+  [1,60] = 196 Musik - Ende und Anfang.mp3
+}
+001 Musik - Im Dunkeln.mp3
+005 Musik - Furcht.mp3
+008 Musik - Das Tor.mp3
+011 Musik - Unterwegs.mp3
+015 Musik - Schaetze.mp3
+019 Musik - Erinnerung.mp3
+023 Musik - Gaukelei.mp3
+025 Musik - Blicke im Dunkeln.mp3
+027 Musik - Seitenweise.mp3
+031 Musik - Nostalgia (1).mp3
+033 Musik - Nostalgia (2).mp3
+035 Musik - Schlaflos.mp3
+038 Musik - Gedanken.mp3
+042 Musik - Herzklopfen.mp3
+045 Musik - Tristezza.mp3
+047 Musik - Malavita.mp3
+053 Musik - Traumbilder.mp3
+060 Musik - Silber und Gold.mp3
+065 Musik - In der Sonne.mp3
+070 Musik - La strada.mp3
+073 Musik - La macchia.mp3
+077 Musik - Giro.mp3
+080 Musik - Fragole.mp3
+084 Musik - Mondvogel.mp3
+088 Musik - Treffen.mp3
+090 Musik - Curiositá.mp3
+093 Musik - Reissaus.mp3
+095 Musik - La spia.mp3
+097 Musik - Gallo rosso.mp3
+099 Musik - Wuensche.mp3
+105 Musik - Verspielt.mp3
+108 Musik - Feuergeister.mp3
+111 Musik - Wendungen.mp3
+115 Musik - Besuch.mp3
+119 Musik - Nostalgia (3).mp3
+122 Musik - Solo.mp3
+124 Musik - Nostalgia (4).mp3
+126 Musik - Sfortunato.mp3
+129 Musik - Die zweite Stimme.mp3
+133 Musik - Zikaden.mp3
+135 Musik - Visione.mp3
+138 Musik - Pssst!.mp3
+142 Musik - Nachrichten.mp3
+145 Musik - Resa.mp3
+148 Musik - Schwarze Kunst.mp3
+150 Musik - Zaubersprueche.mp3
+153 Musik - Der Plan.mp3
+156 Musik - Helfer.mp3
+160 Musik - Bangen.mp3
+165 Musik - Nostalgia (5).mp3
+168 Musik - Arrividerci.mp3
+170 Musik - Contra.mp3
+173 Musik - Welten.mp3
+176 Musik - Papier.mp3
+179 Musik - Flammen.mp3
+182 Musik - Parole.mp3
+187 Musik - Leben und Tod.mp3
+190 Musik - Grillen, Feen und Kobolde.mp3
+193 Musik - Zwischenwelt.mp3
+196 Musik - Ende und Anfang.mp3
+Files = 
+{
+  [1,1] = 001 Musik - Attesa.mp3
+  [1,2] = 006 Musik - 1001 Strasse.mp3
+  [1,3] = 010 Musik - Papier im Wind.mp3
+  [1,4] = 015 Musik - In einer anderen Welt.mp3
+  [1,5] = 022 Musik - Kleine Stuecke vom Himmel.mp3
+  [1,6] = 029 Musik - In Gedanken (1).mp3
+  [1,7] = 036 Musik - Comeallya.mp3
+  [1,8] = 040 Musik - In Gedanken (2).mp3
+  [1,9] = 052 Musik - Musica azzurra.mp3
+  [1,10] = 058 Musik - Herzklopfen.mp3
+  [1,11] = 061 Musik - Schweigen.mp3
+  [1,12] = 066 Musik - Bastardo (1).mp3
+  [1,13] = 070 Musik - Dichter Klang.mp3
+  [1,14] = 076 Musik - Il principe nero.mp3
+  [1,15] = 080 Musik - Kurze Nachtmusik.mp3
+  [1,16] = 084 Musik - Schwarz und rot.mp3
+  [1,17] = 089 Musik - Eingesponnen.mp3
+  [1,18] = 094 Musik - Stimmen (1).mp3
+  [1,19] = 101 Musik - Staendchen bei Hofe.mp3
+  [1,20] = 105 Musik - So oder so.mp3
+  [1,21] = 109 Musik - Sospiro.mp3
+  [1,22] = 115 Musik - Ferne Naehe.mp3
+  [1,23] = 117 Musik - Stimmen (2).mp3
+  [1,24] = 120 Musik - Vivace.mp3
+  [1,25] = 125 Musik - Weinen und Lachen.mp3
+  [1,26] = 129 Musik - Kleine Musik fuer grosse Maedchen.mp3
+  [1,27] = 136 Musik - La voglia.mp3
+  [1,28] = 139 Musik - Mardermusik.mp3
+  [1,29] = 142 Musik - Musik gegen Musik.mp3
+  [1,30] = 147 Musik - Batticuore.mp3
+  [1,31] = 152 Musik - Temperamento.mp3
+  [1,32] = 157 Musik - Blumen und Klingen.mp3
+  [1,33] = 159 Musik - Roots.mp3
+  [1,34] = 163 Musik - Mund zu Mund.mp3
+  [1,35] = 167 Musik - Tintenmusik.mp3
+  [1,36] = 169 Musik - Genuinità  - In memoriam Francesco Attanasi.mp3
+  [1,37] = 175 Musik - Autenticità.mp3
+  [1,38] = 183 Musik - Gefuehle.mp3
+  [1,39] = 190 Musik - Vogelfrei.mp3
+  [1,40] = 192 Musik - Brioso.mp3
+  [1,41] = 198 Musik - Wiedersehen.mp3
+  [1,42] = 200 Musik - Stimmen.mp3
+  [1,43] = 204 Musik - Frei.mp3
+  [1,44] = 208 Musik - Mit Haut und Haar.mp3
+  [1,45] = 210 Musik - Brief-Geheimnis.mp3
+  [1,46] = 214 Musik - Musik aus Glas.mp3
+  [1,47] = 218 Musik - Liebestraeume.mp3
+  [1,48] = 220 Musik - Der Ruf des Eichelhaehers.mp3
+  [1,49] = 226 Musik - Feuerprobe.mp3
+  [1,50] = 229 Musik - Blaue Traeume.mp3
+  [1,51] = 236 Musik - Fiducia.mp3
+  [1,52] = 238 Musik - Molto vivace.mp3
+  [1,53] = 243 Musik - Velo.mp3
+  [1,54] = 246 Musik - Tag fuer Tag.mp3
+  [1,55] = 249 Musik - Il suono.mp3
+  [1,56] = 253 Musik - Spuren.mp3
+  [1,57] = 256 Musik - Meeresleuchten.mp3
+  [1,58] = 258 Musik - Chimes.mp3
+  [1,59] = 263 Musik - Verstanden.mp3
+  [1,60] = 268 Musik - Scintille.mp3
+  [1,61] = 272 Musik - Zusammen.mp3
+  [1,62] = 274 Musik - Fuer immer.mp3
+  [1,63] = 278 Musik - Ein neues Lied.mp3
+  [1,64] = 280 Musik - Perdita.mp3
+  [1,65] = 283 Musik - Wohin.mp3
+  [1,66] = 291 Musik - In bianco.mp3
+  [1,67] = 295 Musik - Feuertraeume.mp3
+  [1,68] = 297 Musik - Himmel und Erde.mp3
+  [1,69] = 300 Musik - Fluestern.mp3
+  [1,70] = 308 Musik - Morgengrauen.mp3
+  [1,71] = 312 Musik - Bastardo (2).mp3
+  [1,72] = 318 Musik - Honig oder Gift.mp3
+  [1,73] = 322 Musik - La maschera.mp3
+  [1,74] = 324 Musik - 1001 speranze.mp3
+  [1,75] = 327 Musik - Fragen.mp3
+  [1,76] = 331 Musik - Disperazione.mp3
+  [1,77] = 334 Musik - Der Schwur.mp3
+}
+001 Musik - Attesa.mp3
+006 Musik - 1001 Strasse.mp3
+010 Musik - Papier im Wind.mp3
+015 Musik - In einer anderen Welt.mp3
+022 Musik - Kleine Stuecke vom Himmel.mp3
+029 Musik - In Gedanken (1).mp3
+036 Musik - Comeallya.mp3
+040 Musik - In Gedanken (2).mp3
+052 Musik - Musica azzurra.mp3
+058 Musik - Herzklopfen.mp3
+061 Musik - Schweigen.mp3
+066 Musik - Bastardo (1).mp3
+070 Musik - Dichter Klang.mp3
+076 Musik - Il principe nero.mp3
+080 Musik - Kurze Nachtmusik.mp3
+084 Musik - Schwarz und rot.mp3
+089 Musik - Eingesponnen.mp3
+094 Musik - Stimmen (1).mp3
+101 Musik - Staendchen bei Hofe.mp3
+105 Musik - So oder so.mp3
+109 Musik - Sospiro.mp3
+115 Musik - Ferne Naehe.mp3
+117 Musik - Stimmen (2).mp3
+120 Musik - Vivace.mp3
+125 Musik - Weinen und Lachen.mp3
+129 Musik - Kleine Musik fuer grosse Maedchen.mp3
+136 Musik - La voglia.mp3
+139 Musik - Mardermusik.mp3
+142 Musik - Musik gegen Musik.mp3
+147 Musik - Batticuore.mp3
+152 Musik - Temperamento.mp3
+157 Musik - Blumen und Klingen.mp3
+159 Musik - Roots.mp3
+163 Musik - Mund zu Mund.mp3
+167 Musik - Tintenmusik.mp3
+169 Musik - Genuinità  - In memoriam Francesco Attanasi.mp3
+175 Musik - Autenticità.mp3
+183 Musik - Gefuehle.mp3
+190 Musik - Vogelfrei.mp3
+192 Musik - Brioso.mp3
+198 Musik - Wiedersehen.mp3
+200 Musik - Stimmen.mp3
+204 Musik - Frei.mp3
+208 Musik - Mit Haut und Haar.mp3
+210 Musik - Brief-Geheimnis.mp3
+214 Musik - Musik aus Glas.mp3
+218 Musik - Liebestraeume.mp3
+220 Musik - Der Ruf des Eichelhaehers.mp3
+226 Musik - Feuerprobe.mp3
+229 Musik - Blaue Traeume.mp3
+236 Musik - Fiducia.mp3
+238 Musik - Molto vivace.mp3
+243 Musik - Velo.mp3
+246 Musik - Tag fuer Tag.mp3
+249 Musik - Il suono.mp3
+253 Musik - Spuren.mp3
+256 Musik - Meeresleuchten.mp3
+258 Musik - Chimes.mp3
+263 Musik - Verstanden.mp3
+268 Musik - Scintille.mp3
+272 Musik - Zusammen.mp3
+274 Musik - Fuer immer.mp3
+278 Musik - Ein neues Lied.mp3
+280 Musik - Perdita.mp3
+283 Musik - Wohin.mp3
+291 Musik - In bianco.mp3
+295 Musik - Feuertraeume.mp3
+297 Musik - Himmel und Erde.mp3
+300 Musik - Fluestern.mp3
+308 Musik - Morgengrauen.mp3
+312 Musik - Bastardo (2).mp3
+318 Musik - Honig oder Gift.mp3
+322 Musik - La maschera.mp3
+324 Musik - 1001 speranze.mp3
+327 Musik - Fragen.mp3
+331 Musik - Disperazione.mp3
+334 Musik - Der Schwur.mp3
+Files = 
+{
+  [1,1] = 001 Musik - Solitude.mp3
+  [1,2] = 004 Musik - Gaggia.mp3
+  [1,3] = 009 Musik - Tag und Nacht.mp3
+  [1,4] = 014 Musik - Der Weg.mp3
+  [1,5] = 018 Musik - To do or not to do.mp3
+  [1,6] = 024 Musik - Lagna e speranza.mp3
+  [1,7] = 029 Musik - Funken.mp3
+  [1,8] = 035 Musik - Hinter Mauern.mp3
+  [1,9] = 037 Musik - Traenen.mp3
+  [1,10] = 044 Musik - La Proposta.mp3
+  [1,11] = 048 Musik - Glimmendes Feuer.mp3
+  [1,12] = 051 Musik - Gestohlen.mp3
+  [1,13] = 056 Musik - Glasmond.mp3
+  [1,14] = 058 Musik - Ya Allah!.mp3
+  [1,15] = 063 Musik - Die Sprache des Schweigens.mp3
+  [1,16] = 066 Musik - Zwischen den Welten.mp3
+  [1,17] = 072 Musik - Dunkel.mp3
+  [1,18] = 076 Musik - Das wirkliche Leben.mp3
+  [1,19] = 081 Musik - Orfeo Blanco.mp3
+  [1,20] = 084 Musik - Traenen im Regen.mp3
+  [1,21] = 087 Musik - Heartbeat.mp3
+  [1,22] = 090 Musik - Wird alles gut.mp3
+  [1,23] = 093 Musik - Deal.mp3
+  [1,24] = 096 Musik - Der Klang der Stille.mp3
+  [1,25] = 099 Musik - Doppeltes Spiel.mp3
+  [1,26] = 103 Musik - Anderwelt.mp3
+  [1,27] = 105 Musik - Out of the blue.mp3
+  [1,28] = 107 Musik - Die Antwort.mp3
+  [1,29] = 110 Musik - Furchtlos (1).mp3
+  [1,30] = 115 Musik - Furchtlos (2).mp3
+  [1,31] = 119 Musik - Lacrime.mp3
+  [1,32] = 123 Musik - Geteilte Angst.mp3
+  [1,33] = 126 Musik - Young at Heart.mp3
+  [1,34] = 131 Musik - Drei Tage.mp3
+  [1,35] = 134 Musik - Meggies Lied.mp3
+  [1,36] = 138 Musik - Das Tor.mp3
+  [1,37] = 142 Musik - Despina speranzosa.mp3
+  [1,38] = 148 Musik - Morgen-Grauen.mp3
+  [1,39] = 152 Musik - Kleiner Feuerzauber.mp3
+  [1,40] = 155 Musik - Mund zu Mund.mp3
+  [1,41] = 159 Musik - Aus der selben Geschichte.mp3
+  [1,42] = 163 Musik - Nostalgico ma non troppo.mp3
+  [1,43] = 172 Musik - Jagdmusik (1).mp3
+  [1,44] = 175 Musik - Elsternlied.mp3
+  [1,45] = 179 Musik - Atem.mp3
+  [1,46] = 183 Musik - Rughe.mp3
+  [1,47] = 187 Musik - Der schmale Grat.mp3
+  [1,48] = 190 Musik - Die Haelfte des Himmels.mp3
+  [1,49] = 195 Musik - Fluessiges Feuer.mp3
+  [1,50] = 201 Musik - Jagdmusik (2).mp3
+  [1,51] = 206 Musik - Vanitá aiuta.mp3
+  [1,52] = 209 Musik - L'ucello morto.mp3
+  [1,53] = 212 Musik - Nightmare (1).mp3
+  [1,54] = 217 Musik - An Cailín Rua.mp3
+  [1,55] = 220 Musik - Heiss und kalt.mp3
+  [1,56] = 224 Musik - Ad altissimo livello.mp3
+  [1,57] = 229 Musik - Nightmare (2).mp3
+  [1,58] = 232 Musik - Gedankenflug.mp3
+  [1,59] = 235 Musik - Suono gigantesco.mp3
+  [1,60] = 240 Musik - Suono d'angeli.mp3
+  [1,61] = 244 Musik - Unheil.mp3
+  [1,62] = 247 Musik - Der Flug der Schwalbe.mp3
+  [1,63] = 251 Musik - Mania.mp3
+  [1,64] = 255 Musik - Tanz mit dem Riesen.mp3
+  [1,65] = 258 Musik - Wer wen.mp3
+  [1,66] = 261 Musik - Trasparenza.mp3
+  [1,67] = 264 Musik - Feuer und wieder Feuer.mp3
+  [1,68] = 267 Musik - Alias.mp3
+  [1,69] = 270 Musik - Stimmenzauber.mp3
+  [1,70] = 274 Musik - Schwalbenliebe.mp3
+  [1,71] = 277 Musik - Verglueht.mp3
+  [1,72] = 280 Musik - Dark Blue.mp3
+  [1,73] = 284 Musik - Capriccioso.mp3
+  [1,74] = 287 Musik - Roter Pfeil auf schwarzem Grund.mp3
+  [1,75] = 289 Musik - Hoffnungsfunke.mp3
+  [1,76] = 291 Musik - Kreide.mp3
+  [1,77] = 293 Musik - Raureif.mp3
+  [1,78] = 295 Musik - Stille.mp3
+  [1,79] = 298 Musik - Marcia.mp3
+  [1,80] = 301 Musik - Traum vom Fliegen.mp3
+  [1,81] = 304 Musik - Nostalgia.mp3
+  [1,82] = 306 Musik - Modern Times in an Old World.mp3
+}
+001 Musik - Solitude.mp3
+004 Musik - Gaggia.mp3
+009 Musik - Tag und Nacht.mp3
+014 Musik - Der Weg.mp3
+018 Musik - To do or not to do.mp3
+024 Musik - Lagna e speranza.mp3
+029 Musik - Funken.mp3
+035 Musik - Hinter Mauern.mp3
+037 Musik - Traenen.mp3
+044 Musik - La Proposta.mp3
+048 Musik - Glimmendes Feuer.mp3
+051 Musik - Gestohlen.mp3
+056 Musik - Glasmond.mp3
+058 Musik - Ya Allah!.mp3
+063 Musik - Die Sprache des Schweigens.mp3
+066 Musik - Zwischen den Welten.mp3
+072 Musik - Dunkel.mp3
+076 Musik - Das wirkliche Leben.mp3
+081 Musik - Orfeo Blanco.mp3
+084 Musik - Traenen im Regen.mp3
+087 Musik - Heartbeat.mp3
+090 Musik - Wird alles gut.mp3
+093 Musik - Deal.mp3
+096 Musik - Der Klang der Stille.mp3
+099 Musik - Doppeltes Spiel.mp3
+103 Musik - Anderwelt.mp3
+105 Musik - Out of the blue.mp3
+107 Musik - Die Antwort.mp3
+110 Musik - Furchtlos (1).mp3
+115 Musik - Furchtlos (2).mp3
+119 Musik - Lacrime.mp3
+123 Musik - Geteilte Angst.mp3
+126 Musik - Young at Heart.mp3
+131 Musik - Drei Tage.mp3
+134 Musik - Meggies Lied.mp3
+138 Musik - Das Tor.mp3
+142 Musik - Despina speranzosa.mp3
+148 Musik - Morgen-Grauen.mp3
+152 Musik - Kleiner Feuerzauber.mp3
+155 Musik - Mund zu Mund.mp3
+159 Musik - Aus der selben Geschichte.mp3
+163 Musik - Nostalgico ma non troppo.mp3
+172 Musik - Jagdmusik (1).mp3
+175 Musik - Elsternlied.mp3
+179 Musik - Atem.mp3
+183 Musik - Rughe.mp3
+187 Musik - Der schmale Grat.mp3
+190 Musik - Die Haelfte des Himmels.mp3
+195 Musik - Fluessiges Feuer.mp3
+201 Musik - Jagdmusik (2).mp3
+206 Musik - Vanitá aiuta.mp3
+209 Musik - L'ucello morto.mp3
+212 Musik - Nightmare (1).mp3
+217 Musik - An Cailín Rua.mp3
+220 Musik - Heiss und kalt.mp3
+224 Musik - Ad altissimo livello.mp3
+229 Musik - Nightmare (2).mp3
+232 Musik - Gedankenflug.mp3
+235 Musik - Suono gigantesco.mp3
+240 Musik - Suono d'angeli.mp3
+244 Musik - Unheil.mp3
+247 Musik - Der Flug der Schwalbe.mp3
+251 Musik - Mania.mp3
+255 Musik - Tanz mit dem Riesen.mp3
+258 Musik - Wer wen.mp3
+261 Musik - Trasparenza.mp3
+264 Musik - Feuer und wieder Feuer.mp3
+267 Musik - Alias.mp3
+270 Musik - Stimmenzauber.mp3
+274 Musik - Schwalbenliebe.mp3
+277 Musik - Verglueht.mp3
+280 Musik - Dark Blue.mp3
+284 Musik - Capriccioso.mp3
+287 Musik - Roter Pfeil auf schwarzem Grund.mp3
+289 Musik - Hoffnungsfunke.mp3
+291 Musik - Kreide.mp3
+293 Musik - Raureif.mp3
+295 Musik - Stille.mp3
+298 Musik - Marcia.mp3
+301 Musik - Traum vom Fliegen.mp3
+304 Musik - Nostalgia.mp3
+306 Musik - Modern Times in an Old World.mp3
+Files = {}(0x0)
+Files = {}(0x0)
