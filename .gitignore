@@ -3,3 +3,5 @@ Matlab/UKF-Scaling-ParameterVariation.tex
 
 *.pyc
 Python/PDF/Dissertation.log
+Data
+*.xlsx
