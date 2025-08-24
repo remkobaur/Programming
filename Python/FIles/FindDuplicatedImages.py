@@ -4,7 +4,7 @@ import pathlib
 from pathlib import Path
 import copy
 import pandas as pd
-
+import click # for yes/no dialog
 
 imageExtensions = ['.png','.PNG','.jpg','.mp4','.JPG','.MOV']
 
@@ -15,6 +15,7 @@ config ={
    'keep_subFolders':[],
    'keep_subFolders':[],
    'Skip_subFolders':[],
+   'EnableDeleteFiles':False   
 }
 
 
@@ -163,8 +164,14 @@ def xlsExport_ValidatedDuplicateList(AnalysisResults,OutputFile):
     # create dataframe with all results
     for sameFileDictList in AnalysisResults:
         df = df._append(sameFileDictList, ignore_index=True)    
+    
+    exportPath = os.path.join(os.path.dirname(os.path.abspath(__file__)),'Data')
     # Export results to excel file
-    df.to_excel(os.path.join(os.path.dirname(os.path.abspath(__file__)),'Data',OutputFile))
+    if not os.path.exists(exportPath):
+        print(f'INFO: Export Path <{exportPath}> does not exist! --> It will be created now!')
+        os.makedirs(exportPath)
+        
+    df.to_excel(os.path.join(exportPath,OutputFile))
 
 def delete_DuplicatedFiles(AnalysisResults,deleteFiles):
     del_count = 0
@@ -177,25 +184,33 @@ def delete_DuplicatedFiles(AnalysisResults,deleteFiles):
                 del_count+=1
     print(f"{del_count} images deleted")
 
+def check_config(_config):    
+    if _config['EnableDeleteFiles']:
+        if click.confirm('Do you want to continue?', default=True):
+            print('\t-> continue with ACTIVE file deletion')
+        else:
+            _config['EnableDeleteFiles'] = False
+            print('\t-> ACTIVE file deletion was disabled by user choise')
+        print(f"\t==> _config['EnableDeleteFiles'] = {_config['EnableDeleteFiles']}")
 #============================================================================================
 #============================================================================================
 
 def testing1():
-    remove_subFolders = ['Afterworld','Dias']
-    keep_subFolders = ['Best','best','uswahl']
+    _config = copy.deepcopy(config)
+    _config['remove_subFolders'] = ['Afterworld','Dias']
+    _config['keep_subFolders']= ['Best','best','uswahl']
 
     item_list = get_ImageList_for_folderTree(rootdir_glob = r'C:\GIT\_TestData')
 
-    AnalysisResults=findDuplicateList_Dict(item_list,keep_subFolders,remove_subFolders)
+    AnalysisResults=findDuplicateList_Dict(item_list,_config)
     xlsExport_ValidatedDuplicateList(AnalysisResults,'douplicate_List.xlsx')
-    delete_DuplicatedFiles(AnalysisResults,deleteFiles=False)
+    delete_DuplicatedFiles(AnalysisResults,deleteFiles=_config['EnableDeleteFiles']) 
     
 def testing2():
-    remove_subFolders = ['Afterworld','Dias']
-    keep_subFolders= []
-    rootdir_glob = r'C:\GIT\_TestData'
-
-    keep_subFolders= []
+    _config = copy.deepcopy(config)
+    check_config(_config)   
+    _config['remove_subFolders'] = ['Afterworld','Dias']
+    _config['keep_subFolders']= []
 
     item_list=[]
     #item_list += get_ImageList_for_folderTree(rootdir_glob = r'C:\GIT\_TestData')
@@ -203,13 +218,15 @@ def testing2():
     item_list += get_ImageList_for_folderTree(rootdir_glob = r'C:\GIT\_TestData\root1')
     item_list += get_ImageList_for_folderTree(rootdir_glob = r'C:\GIT\_TestData\root02')
 
-    AnalysisResults=findDuplicateList_Dict(item_list,keep_subFolders,remove_subFolders)
+    AnalysisResults=findDuplicateList_Dict(item_list,_config)
     xlsExport_ValidatedDuplicateList(AnalysisResults,'douplicate_List.xlsx')
-    delete_DuplicatedFiles(AnalysisResults,deleteFiles=False)
+    delete_DuplicatedFiles(AnalysisResults,deleteFiles=_config['EnableDeleteFiles']) 
 
 def testing3():
-    remove_subFolders = ['Afterworld','Dias']
-    keep_subFolders= []
+    _config = copy.deepcopy(config)
+    check_config(_config)   
+    _config['remove_subFolders'] = ['Afterworld','Dias']
+    _config['keep_subFolders']= []
     rootdir_glob = r'C:\GIT\_TestData'
 
     keep_subFolders= []
@@ -218,19 +235,20 @@ def testing3():
     item_list += get_ImageList_for_folderTree(rootdir_glob = r'C:\GIT\_TestData1')
     item_list += get_ImageList_for_folderTree(rootdir_glob = r'C:\GIT\_TestData2')
 
-    AnalysisResults=findDuplicateList_Dict(item_list,keep_subFolders,remove_subFolders)
+    AnalysisResults=findDuplicateList_Dict(item_list,_config)
     xlsExport_ValidatedDuplicateList(AnalysisResults,'douplicate_List.xlsx')
-    delete_DuplicatedFiles(AnalysisResults,deleteFiles=False)
+    delete_DuplicatedFiles(AnalysisResults,deleteFiles=_config['EnableDeleteFiles']) 
  
 def process_folder(root = r'\\IR_MedServ\photo\Events\2014_09_27_Detmerode_Wald',_config = config):
+    check_config(_config)   
     item_list = get_ImageList_for_folderTree(rootdir_glob = root)
     fileName = root.replace('\\\\IR_MedServ\\photo\\','').replace('\\',' ')
     AnalysisResults=findDuplicateList_Dict(item_list,_config)
     xlsExport_ValidatedDuplicateList(AnalysisResults,f'{fileName}.xlsx')
-    delete_DuplicatedFiles(AnalysisResults,deleteFiles=False) 
+    # delete_DuplicatedFiles(AnalysisResults,deleteFiles=_config['EnableDeleteFiles']) 
  
 def process_forEachSubfolder(root =r'\\IR_MedServ\photo\Events',_config = config):
-              
+    check_config(_config)           
     dirname = Path(root)
     subfolders = [f.name for f in dirname.iterdir() if f.is_dir()]
     subfolders.sort()
@@ -239,12 +257,11 @@ def process_forEachSubfolder(root =r'\\IR_MedServ\photo\Events',_config = config
             continue        
         item_list = get_ImageList_for_folderTree(rootdir_glob = os.path.join(root,sf))
         AnalysisResults=findDuplicateList_Dict(item_list,_config)
-        delete_DuplicatedFiles(AnalysisResults,deleteFiles=False)
+        delete_DuplicatedFiles(AnalysisResults,deleteFiles=_config['EnableDeleteFiles']) 
         
 def process_forEachSubfolder_secondRootList(root =r'\\IR_MedServ\photo\Events', secondFolderList=[r'\\IR_MedServ\photo\share'],_config = config):
 
-            
-    
+    check_config(_config)  
     dirname = Path(root)
     subfolders = [f.name for f in dirname.iterdir() if f.is_dir()]
     subfolders.sort()
@@ -257,7 +274,7 @@ def process_forEachSubfolder_secondRootList(root =r'\\IR_MedServ\photo\Events', 
             item_list += get_ImageList_for_folderTree(rootdir_glob = secFolder)
         AnalysisResults=findDuplicateList_Dict(item_list,_config)
         xlsExport_ValidatedDuplicateList(AnalysisResults,f'{fileName}.xlsx')
-        delete_DuplicatedFiles(AnalysisResults,deleteFiles=False)
+        delete_DuplicatedFiles(AnalysisResults,deleteFiles=_config['EnableDeleteFiles']) 
         
 # testing1()
 # testing2()
@@ -268,6 +285,9 @@ _config['remove_subFolders'] =['Afterworld','Dias','raw','lowres']
 _config['keep_subFolders'] =['Best','best','uswahl']
 _config['skip_subFolders'] =['0_Remko','0_Ira']
 _config['sameSizeReq'] = True
+_config['EnableDeleteFiles'] = False   
+
+
 
 # process()
 process_folder(r'\\IR_MedServ\photo\Events\2024_06_13_Promotion_Verteidigung',_config = _config)
