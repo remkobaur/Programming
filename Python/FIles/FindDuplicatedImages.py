@@ -10,12 +10,13 @@ imageExtensions = ['.png','.PNG','.jpg','.mp4','.JPG','.MOV']
 
 config ={
    'sameSizeReq':True ,
-   'List_SingleFiles':False ,
+   'List_SingleFiles':True ,
    'debugPrint':False,
    'keep_subFolders':[],
    'keep_subFolders':[],
    'Skip_subFolders':[],
-   'EnableDeleteFiles':False   
+   'EnableDeleteFiles':False,
+   'DeleteCopyInOtherPath':False
 }
 
 
@@ -33,122 +34,133 @@ def get_fileDict(fileName):
         'File':pathlib.Path(fileName).stem+pathlib.Path(fileName).suffix,
         'Ext':pathlib.Path(fileName).suffix,
         'Stem':pathlib.Path(fileName).stem,
-        'Path':os.path.dirname(os.path.abspath(fileName)),
+        'Path':os.path.dirname(os.path.abspath(fileName)).replace('\\\\IR_MedServ\\photo\\',''),
         'Size':os.path.getsize(fileName),
         'FullPath':fileName,
-        'Tag':'',
+        'Tag':[],
         'Delete':''
         })
+    
+def _addTags(item,search_list,_config):
+    searchName = pathlib.Path(item).stem
+    serchExt = pathlib.Path(item).suffix
+    # search_list.remove(item)
+    
+    # find all files with same name
+    sameNameList = [f for f in search_list if searchName in f and serchExt in f]          
+    sameFileDictList =[]  
+    if len(sameNameList)>=1:
+        
+        for k in sameNameList:  
+            FD = get_fileDict(k)
+             # if any remove_subFolder is in path --> tag = remove
+            if any( sf in FD['Path'] for sf in _config['remove_subFolders']):
+                FD['Tag'].append('removeSF')
+            # if any keep_subFolder is in path --> tag = keep
+            if any( sf in FD['Path'] for sf in _config['keep_subFolders']):                    
+                FD['Tag'] .append('keepSF')
+                FD['Delete'] = 'KEEP'
+            sameFileDictList.append(FD)                
+            search_list.remove(k)        
+            
+        if len(sameFileDictList)<=1:
+            if len(sameFileDictList)==1:
+                sameFileDictList[0]['Tag'].append('SingleFile') 
+                sameFileDictList[0]['Delete'] = 'KEEP'
+            return sameFileDictList        
+            
+        for  k in sameFileDictList:          
+            # if k['Delete'] in ['x']:
+            #     continue
+            #filename in other filename
+            for f in sameFileDictList:  
+                if f['FullPath'] == k['FullPath'] :
+                    continue # skip element F as it is element K
+                
+                if f['Delete'] in ['x','KEEP']:
+                    continue
+                
+                _sameFileName = k['File'] == f['File']
+                _stemInName = k['Stem'] in f['File']
+                _sameSize = k['Size'] == f['Size']
+                _samePath = k['Path'] == f['Path']
+                _isBigger = k['Size'] < f['Size']
+                            
+                # --- same size
+                if _config['sameSizeReq']:
+                    if _sameSize: 
+                        if _sameFileName: #same name and size
+                            f['Tag'].append('SameFile')
+                        elif _samePath and _stemInName: #same path and stem in name 
+                            f['Tag'].append('copy in Path')    
+                        elif _stemInName: #stem in name, but different path
+                            f['Tag'].append('copy in other path') 
+                        else:
+                            f['Tag'].append('difFile') 
+                    else:
+                            f['Tag'].append('difSize')  
+                # --- different size
+                else:
+                    if _sameSize:
+                        f['Tag'].append('SameSize')
+                    elif _isBigger:
+                        f['Tag'].append('bigger')
+                    else:
+                        f['Tag'].append('smaller')
+                    if _sameFileName: #same name and size
+                        f['Tag'].append('SameFile') 
+                    elif _samePath and _stemInName: #same path and stem in name 
+                        f['Tag'].append('copy in Path')    
+                    elif _stemInName and _sameSize: #stem in name, but different path
+                        f['Tag'].append('copy in other path')
+                    else:
+                        f['Tag'].append('difFile')   
+                
+                DeleteTags = ['SameFile','copy in Path']
+                if _config['DeleteCopyInOtherPath']:
+                    DeleteTags.append('copy in other path')
+                if any( t in f['Tag'] for t in DeleteTags) and not 'keepSF' in f['Tag']:
+                    f['Delete'] = 'x'
+
+                if _config['sameSizeReq']:
+                    if 'difSize' in f['Tag']:
+                        f['Delete'] = 'KEEP'
+            
+                 
+        if all( f['Delete']=='x' for f in sameFileDictList):
+            if all( 'removeSF' in f['Tag'] for f in sameFileDictList):
+                # sameFileDictList[0]['Tag'] = 'rescue_keep'
+                sameFileDictList[0]['Delete'] = 'rescue'
+            else:
+                for f in sameFileDictList:
+                    if not 'removeSF' in f['Tag']:
+                        f['Delete'] = 'rescue'
+                        break
+                        
+            
+    return sameFileDictList
 
 def findDuplicateList_Dict(item_list,_config = config):
     resultList =[]
-    # item_list = sorted(item_list, key=len)
-    item_list.sort(key = lambda x:len(os.path.dirname(os.path.abspath(x))))
+
+    item_list.sort(key = lambda x:len(pathlib.Path(x).stem))
     
+    # for item in item_list :  
+    #     print(f' - {pathlib.Path(item).stem}')
     
     search_list = copy.deepcopy(item_list)    
-    for item in item_list :
-        # print(f"{pathlib.Path(item).stem} --> {pathlib.Path(item).suffix} --> size = {os.path.getsize(item)} -->{item}")
+    for item in item_list :        
         if item not in search_list:
-            # dummy = get_fileDict(item)
-            # dummy['Tag'] = 'notIMSearchList'
-            # resultList.append([dummy])
             continue
         
-        searchName = pathlib.Path(item).stem
-        serchExt = pathlib.Path(item).suffix
-        # search_list.remove(item)
+        sameFileDictList = _addTags(item,search_list,_config)
         
-        # find all files with same name
-        sameNameList = [f for f in search_list if searchName in f and serchExt in f]      
-        if len(sameNameList)>1:
-            sameFileDictList =[]  
-            # print(f"\n{item} --------")
-            for k in sameNameList:  
-                sameFileDictList.append(get_fileDict(k))                
-                search_list.remove(k)
-            # for k in sameNameList:  
-            #     # compare size                        
-            #     if os.path.getsize(item) == os.path.getsize(k): # or True:
-            #         # print(f" + {k}") 
-            #         sameFileDictList.append(get_fileDict(k)) 
-            #         # search_list.remove(k)                         
-            #     else:
-            #         print(f"different size \n\t- {os.path.getsize(item) } : {item} \n\t- {os.path.getsize(k)} : {k} ")
-            #         # print(f"\t! Diff Size {k} --> size = {os.path.getsize(k)} --> org size = {os.path.getsize(item)}")
-            #         pass
-                
-            if len(sameFileDictList)==0:
-                continue
-            
-                
-            for  k in sameFileDictList:
-                # if any remove_subFolder is in path --> tag = remove
-                if any( sf in k['Path'] for sf in _config['remove_subFolders']):
-                    k['Tag'] = 'removeSF'
-                    continue
-                # if any keep_subFolder is in path --> tag = keep
-                if any( sf in k['Path'] for sf in _config['keep_subFolders']):                    
-                    k['Tag'] = 'keep'
-                    continue
-                if not k['Tag'] =='':
-                    continue
-                # if k['FullPath'] == item: # identical files
-                #     k['Tag'] = 'DuplicateEntry'
-                #     continue
-                #filename in other filename
-                for  f in sameFileDictList:  
-                    if f['FullPath'] == k['FullPath'] :
-                        continue
-                    if f['Tag'] != '':
-                        continue          
-                    if k['Stem'] in f['File']: 
-                        if  k['File'] ==  f['File']:
-                            if k['Size'] == f['Size']:
-                                f['Tag'] = 'SameFile'
-                            elif not _config['sameSizeReq']: 
-                                if k['Size'] < f['Size']:
-                                    f['Tag'] = 'BiggerFile'                                
-                                else:
-                                    f['Tag'] = 'SmallerFile'                                                               
-                        elif k['Path'] == f['Path'] and (not _config['sameSizeReq'] or k['Size'] == f['Size']):
-                            f['Tag'] = 'copy in Path'       
-                        else:
-                            f['Tag'] = 'Stem in File'             
-                        continue     
-                              
-            if all( f['Tag']=='Delete' for f in sameFileDictList):
-                sameFileDictList[0]['Tag'] = 'rescue_keep'
-                
-            for  k in sameFileDictList:
-                if k['Tag'] in ['keep','rescue_keep','BiggerFile']:
-                    k['Delete'] = '--'                    
-                # elif k['Tag'] in ['SmallerFile','SameFile','removeSF']:
-                elif k['Tag'] in ['SameFile','copy in Path','removeSF']:
-                    k['Delete'] = 'x'                         
-                elif k['Tag']  == '':
-                    k['Tag'] ='unTouched'  
-                    k['Delete'] = '?'                      
-                        
-            
-                
-            # if any( f['Tag'] in ['keep','rescue_keep'] for f in sameFileDictList):
-            #     for k in sameFileDictList:
-            #         if k['Tag'] in ['keep','rescue_keep']:
-            #             k['Delete'] = '-'
-            #         else:
-            #             k['Delete'] = 'x'
-                        
-            # for k in sameFileDictList:
-            #     if k['Tag']  == '':
-            #         k['Tag'] ='unTouched'
-            #     else:
-            #         search_list.remove(k['FullPath'])  
-            #         pass
-            if len(sameFileDictList)>=1:
-                resultList.append(sameFileDictList)
-    
-    if len(sameFileDictList)>=1 and _config['List_SingleFiles']:
+        if len(sameFileDictList)==0:
+            continue      
+        else:
+            resultList.append(sameFileDictList)
+             
+    if len(search_list)>0 and _config['List_SingleFiles']:
         sameFileDictList =[]        
         for f in search_list:            
             dummy = get_fileDict(f)
@@ -160,7 +172,7 @@ def findDuplicateList_Dict(item_list,_config = config):
 def xlsExport_ValidatedDuplicateList(AnalysisResults,OutputFile):      
     if len(AnalysisResults) ==0:
         return      
-    df = pd.DataFrame(columns=['File','Ext','Path','Stem','Size','FullPath','Tag','Delete'])
+    df = pd.DataFrame(columns=['File','Path','Tag','Delete','Size','Ext','Stem','FullPath'])
     # create dataframe with all results
     for sameFileDictList in AnalysisResults:
         df = df._append(sameFileDictList, ignore_index=True)    
@@ -241,11 +253,11 @@ def testing3():
  
 def process_folder(root = r'\\IR_MedServ\photo\Events\2014_09_27_Detmerode_Wald',_config = config):
     check_config(_config)   
-    item_list = get_ImageList_for_folderTree(rootdir_glob = root)
-    fileName = root.replace('\\\\IR_MedServ\\photo\\','').replace('\\',' ')
+    item_list = get_ImageList_for_folderTree(rootdir_glob = root)    
     AnalysisResults=findDuplicateList_Dict(item_list,_config)
+    fileName = root.replace('\\\\IR_MedServ\\photo\\','').replace('\\',' ')
     xlsExport_ValidatedDuplicateList(AnalysisResults,f'{fileName}.xlsx')
-    # delete_DuplicatedFiles(AnalysisResults,deleteFiles=_config['EnableDeleteFiles']) 
+    delete_DuplicatedFiles(AnalysisResults,deleteFiles=_config['EnableDeleteFiles']) 
  
 def process_forEachSubfolder(root =r'\\IR_MedServ\photo\Events',_config = config):
     check_config(_config)           
@@ -284,10 +296,9 @@ _config = copy.deepcopy(config)
 _config['remove_subFolders'] =['Afterworld','Dias','raw','lowres']
 _config['keep_subFolders'] =['Best','best','uswahl']
 _config['skip_subFolders'] =['0_Remko','0_Ira']
-_config['sameSizeReq'] = True
+_config['sameSizeReq'] = False
 _config['EnableDeleteFiles'] = False   
-
-
+_config['DeleteCopyInOtherPath'] = True   
 
 # process()
 process_folder(r'\\IR_MedServ\photo\Events\2024_06_13_Promotion_Verteidigung',_config = _config)
