@@ -300,23 +300,68 @@ def process_forEachSubfolder_secondRootList(root =r'\\IR_MedServ\photo\Events', 
             delcount += delete_DuplicatedFiles(AnalysisResults,deleteFiles=_config['EnableDeleteFiles']) 
     print("=======================================") 
     print(f"Total deleted files = {delcount}") 
+    
+def remove_Empty_subfolders(root,_config=config,topLevel = True):
+    print(f'processing {root}')
+    if topLevel:
+        check_config(_config)
+    subfolders = [f.name for f in Path(root).iterdir() if f.is_dir()]
+    files = [f.name for f in Path(root).iterdir() if not f.is_dir()]
+    isEmpty = len(files)==0 and len(subfolders)==0
+    if isEmpty:
+        print(f'Delete empty Folder: {root}')
+        if _config['EnableDeleteFiles']:
+            os.rmdir(root)
+            pass
+        return True
+    else:
+        status = True
+        for sf in subfolders:                   
+            status = remove_Empty_subfolders(os.path.join(root,sf),_config=_config,topLevel=False)
+            if status ==False:
+                return False   
+    return status 
+
+def process_doubleRoot_suboflerofRoot1(root1 =r'\\IR_MedServ\photo\Events',root2= r'\\IR_MedServ\photo\Events', _config = config):
+
+    check_config(_config)
+    subfolders1 = [f.name for f in Path(root1).iterdir() if f.is_dir()]
+    subfolders2 = [f.name for f in Path(root2).iterdir() if f.is_dir()]
+    
+    delcount = 0
+    for sf in subfolders1:
+        print(f'processing folder: {sf}')
+        if sf in subfolders2:
+            
+            item_list = get_ImageList_for_folderTree(rootdir_glob = os.path.join(root1,sf))
+            item_list += get_ImageList_for_folderTree(rootdir_glob = os.path.join(root2,sf))    
+            AnalysisResults=findDuplicateList_Dict(item_list,_config)
+            if len(AnalysisResults)>0:
+                xlsExport_ValidatedDuplicateList(AnalysisResults,f'{sf}.xlsx')
+                delcount += delete_DuplicatedFiles(AnalysisResults,deleteFiles=_config['EnableDeleteFiles'])
+   
+    print("=======================================") 
+    print(f"Total deleted files = {delcount}") 
+
 # testing1()
 # testing2()
 # testing3()
 
 _config = copy.deepcopy(config)
-_config['remove_subFolders'] =['Afterworld','Dias','raw','lowres','usschuss']
-_config['keep_subFolders'] =['Best','best','uswahl']
+_config['remove_subFolders'] =['Afterworld','Dias','raw','lowres','usschuss','Fotos Petra\\']
+_config['keep_subFolders'] =['Events','Urlaub'] #'Best','best','uswahl',
 _config['skip_subFolders'] =['0_Remko','0_Ira'] # 
 _config['sameSizeReq'] = True
 _config['EnableDeleteFiles'] = True   
 _config['DeleteCopyInOtherPath'] = True   
-
+_config['List_SingleFiles'] =True
 # process()
 # process_folder(r'\\IR_MedServ\photo\Events\2024_06_13_Promotion_Verteidigung',_config = _config)
-process_folder(r'\\IR_MedServ\photo\Familie\Baur_LuM',_config = _config)
+# process_folder(r'\\IR_MedServ\photo\Familie\Hzm_Mur(a)',_config = _config)
 # process_folder(r'\\IR_MedServ\Backup\Remko\_TestData',_config = _config)
 # process_folder(r'C:\GIT\_TestData',_config = _config)
 # process_forEachSubfolder(r'\\IR_MedServ\photo\DCIM-Handy\Remko',_config = _config)
 # process_forEachSubfolder_secondRootList(r'\\IR_MedServ\photo\Events',[r'\\IR_MedServ\photo\share'],_config = _config)
 # process_forEachSubfolder_secondRootList(r'\\IR_MedServ\photo\Familie\Baur_LuM\Urlaubsfotos',[],_config = _config)
+remove_Empty_subfolders(root =r'\\IR_MedServ\photo\Familie\Hzm_Mur(a)\Fotos Petra',_config=_config)
+# process_doubleRoot_suboflerofRoot1(root1 =r'\\IR_MedServ\photo\Familie\Hzm_Mur(a)\Fotos Petra',root2= r'\\IR_MedServ\photo\Urlaub', _config = _config)
