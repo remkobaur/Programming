@@ -4,6 +4,12 @@ import matplotlib.dates
 from datetime import datetime
 import numpy as np
 import copy
+from Python.Banking.CL_OnlineFundValues import (
+    QuoteResult,
+    get_current_value_by_isin,
+    get_value_by_isin_for_month,
+    get_value_by_isin_on_date,
+)
 
 class cl_plotdata:
     xdata = []
@@ -125,20 +131,42 @@ class CL_Banking:
     def show_results(self):
         print(' --- ')
         self.tab.show_table()
+
+    def get_fund_quote_by_isin(self, isin, preferred_currency=None) -> QuoteResult:
+        return get_current_value_by_isin(isin, preferred_currency)
+
+    def get_fund_value_by_isin(self, isin, preferred_currency=None):
+        quote = self.get_fund_quote_by_isin(isin, preferred_currency)
+        return quote.price, quote.currency
+
+    def get_fund_quote_by_isin_on_date(self, isin, target_date, preferred_currency=None) -> QuoteResult:
+        return get_value_by_isin_on_date(isin, target_date, preferred_currency)
+
+    def get_fund_value_by_isin_on_date(self, isin, target_date, preferred_currency=None):
+        quote = self.get_fund_quote_by_isin_on_date(isin, target_date, preferred_currency)
+        return quote.price, quote.currency
+
+    def get_fund_quote_by_isin_for_month(self, isin, year, month, preferred_currency=None) -> QuoteResult:
+        return get_value_by_isin_for_month(isin, year, month, preferred_currency)
+
+    def get_fund_value_by_isin_for_month(self, isin, year, month, preferred_currency=None):
+        quote = self.get_fund_quote_by_isin_for_month(isin, year, month, preferred_currency)
+        return quote.price, quote.currency
     
 
-bk = CL_Banking()
-bk.load_csv_Sparkasse("20180218-1901055728-umsatz.CSV")
-bk.sort_by_date()
-# bk.show_results()
-# exit()
-bk.filter_default()
-bk.filter_date('01.01.17','31.12.18',colName='Buchungstag')
-bk.data_save()
-# bk.filter_col_subString("Buchungstext","LOHN")
-# bk.show_results()
-# bk.plot_over_date('Buchungstag','Betrag',yLabel='Lohn')
-bk.plot_data_add(colVal='Betrag',colDate='Buchungstag',colSearch='Buchungstext',searchString='LOHN')
-bk.plot_data_add(colVal='Betrag',colDate='Buchungstag',colSearch='Buchungstext',searchString='ONLINE-UEBERWEISUNG')
-bk.plot_data_add(colVal='Betrag',colDate='Buchungstag',colSearch='Buchungstext',searchString='KARTENZAHLUNG')
-bk.plot_all_over_date(cumsum=True)
+if __name__ == "__main__":
+    bk = CL_Banking()
+    bk.load_csv_Sparkasse("20180218-1901055728-umsatz.CSV")
+    bk.sort_by_date()
+    # bk.show_results()
+    # exit()
+    bk.filter_default()
+    bk.filter_date('01.01.17','31.12.18',colName='Buchungstag')
+    bk.data_save()
+    # bk.filter_col_subString("Buchungstext","LOHN")
+    # bk.show_results()
+    # bk.plot_over_date('Buchungstag','Betrag',yLabel='Lohn')
+    bk.plot_data_add(colVal='Betrag',colDate='Buchungstag',colSearch='Buchungstext',searchString='LOHN')
+    bk.plot_data_add(colVal='Betrag',colDate='Buchungstag',colSearch='Buchungstext',searchString='ONLINE-UEBERWEISUNG')
+    bk.plot_data_add(colVal='Betrag',colDate='Buchungstag',colSearch='Buchungstext',searchString='KARTENZAHLUNG')
+    bk.plot_all_over_date(cumsum=True)
