@@ -75,19 +75,20 @@ def merge_output_into_funds(
 
 def _parse_args() -> argparse.Namespace:
     current_dir = Path(__file__).resolve().parent
+    data_dir = Path(r"E:\_NAS\0_Remko\Unterlagen\Banking\_Data\Parse_OLB")
     parser = argparse.ArgumentParser(
         description="Merge matching tabs from OutputData.xlsx into Funds.xlsx by Date."
     )
     parser.add_argument(
         "--funds",
         type=Path,
-        default=current_dir / "Funds.xlsx",
+        default=data_dir / "Funds.xlsx",
         help="Path to Funds workbook (default: parseOLB/Funds.xlsx)",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=current_dir / "OutputData.xlsx",
+        default=data_dir / "OutputData.xlsx",
         help="Path to OutputData workbook (default: parseOLB/OutputData.xlsx)",
     )
     parser.add_argument(

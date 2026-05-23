@@ -877,9 +877,11 @@ def main():
     import sys
     
     current_dir = Path(__file__).resolve().parent
+
+    target_dir = Path(r"E:\_NAS\0_Remko\Unterlagen\Banking\_Data\Parse_OLB")
     
     input_path = Path(r"E:\_NAS\0_Remko\Unterlagen\Banking\OLB\DepotAuszug")
-    xls_path = Path(current_dir / "Depotauszug.xlsx")
+    xls_path = Path(target_dir / "Depotauszug.xlsx")
     # Optional CLI override: file or folder path
     if len(sys.argv) > 1:
         input_path = Path(sys.argv[1])
@@ -917,7 +919,7 @@ def main():
         if not pdf_files:
             print(f"No PDF files found in: {input_path}")
             return
-        parse_folder(str(input_path))
+        parse_folder(str(input_path),output_xlsx=str(xls_path))
     else:
         print(f"Error: Path not found or invalid: {input_path}")
 

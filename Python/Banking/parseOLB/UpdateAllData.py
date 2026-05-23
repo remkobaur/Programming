@@ -48,7 +48,8 @@ def _extract_date_series(series: pd.Series) -> pd.Series:
 
 
 def create_OutputData():
-    current_dir = Path(__file__).resolve().parent
+    # current_dir = Path(__file__).resolve().parent
+    current_dir = Path(r"E:\_NAS\0_Remko\Unterlagen\Banking\_Data\Parse_OLB")
     xlsFile = current_dir / "OutputData.xlsx"
     
     # Load data into CL_Tables instances

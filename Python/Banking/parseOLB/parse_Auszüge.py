@@ -229,8 +229,10 @@ def parse_folder(folder_path, output_xlsx=None):
 
 def main():
     current_dir = Path(__file__).resolve().parent
+    target_dir = current_dir
+    target_dir = Path(r"E:\_NAS\0_Remko\Unterlagen\Banking\_Data\Parse_OLB")
     folder = r"E:\_NAS\0_Remko\Unterlagen\Banking\OLB\KontoAuszug"
-    df = parse_folder(folder, output_xlsx=current_dir / "Auszüge.xlsx")
+    df = parse_folder(folder, output_xlsx=target_dir / "Auszüge.xlsx")
     # if df is not None:
     #     print(df.to_string(index=False))
     

@@ -95,7 +95,7 @@ class CL_Fund_Signals:
         
         self.calculate()
             
-    def calculate(self):        
+    def calculate(self,reset_profit=False):        
         # changes_cumsum 
         self.changes_cumsum = self.changes.cumsum()                
         # value_all      
@@ -131,24 +131,50 @@ class CL_Fund_Signals:
         if not self.changes.empty:
             self.invest = self.changes.apply(lambda x: -x if x < 0 else 0)
             self.dividend = self.changes.apply(lambda x: x if x > 0 else 0)    
-        # profit
+        # profit            
         self.profit= self.value_all - self.invest.cumsum() + self.dividend.cumsum() 
-        # idx0 = self.profit.first_valid_index()
-        # if idx0 is not None:
-        #     v0 = self.profit.loc[idx0]
-        #     if v0 >200:
-        #         self.profit= self.profit- v0 
-        # if any(self.invest.cumsum() == 0):
-        #     return
-        # else:        
-        self.profit_relative = self.profit/ self.invest.cumsum() * 100
+        
+        if reset_profit:        
+            idx0 = self.profit.first_valid_index()
+            if idx0 is None:
+                return
+            
+            v0 = self.profit.loc[idx0]
+            self.profit -= v0   
+        
+        
+        start_value_index = self.value_all.first_valid_index() 
+        if start_value_index is None:    
+            print("No valid value_all found to determine start_value for profit_relative calculation.")
+            return
+        else:        
+            start_value = self.value_all.loc[start_value_index] 
+            self.profit_relative = self.profit/ start_value * 100
+        
+        
         
         if not self.quantity.empty :
             # find max value in quantity
             max_quantity = self.quantity.max()
             if max_quantity > 0:
                 self.rel_quantity = self.quantity / max_quantity * 100
-            
+    
+    def to_dataframe(self) -> pd.DataFrame:
+        df = pd.DataFrame({
+            "quantity": self.quantity,
+            "value_single": self.value_single,
+            "value_all": self.value_all,
+            "changes": self.changes,
+            "changes_cumsum": self.changes_cumsum,
+            "total": self.total,
+            "rel_single": self.rel_single,
+            "rel_total": self.rel_total,
+            "invest": self.invest,
+            "dividend": self.dividend,
+            "profit": self.profit,
+            "profit_relative": self.profit_relative
+        })
+        return df
 
 
 class CL_Fund:    
@@ -174,7 +200,7 @@ class CL_Fund:
         self.df_history = df_history.loc[:, [col for col in ["date", "quantity", "value"] if col in df_history.columns]].copy()
         self.df_change = df_change.loc[:, [col for col in ["date", "value"] if col in df_change.columns]].copy()
 
-    def create_signals(self):
+    def create_signals(self,start_date=None, end_date=None):
         if self.df_history.empty:
             return
 
@@ -185,6 +211,15 @@ class CL_Fund:
             return
         self.signals.changes = self.df_change.set_index("date")["value"]
         
+        if start_date is not None:
+            self.signals.quantity = self.signals.quantity[self.signals.quantity.index >= start_date]
+            self.signals.value_single = self.signals.value_single[self.signals.value_single.index >= start_date]
+            self.signals.changes = self.signals.changes[self.signals.changes.index >= start_date]
+        if end_date is not None:
+            self.signals.quantity = self.signals.quantity[self.signals.quantity.index <= end_date]
+            self.signals.value_single = self.signals.value_single[self.signals.value_single.index <= end_date]
+            self.signals.changes = self.signals.changes[self.signals.changes.index <= end_date]
+            
         self.signals.calculate()
         
         # self.signals.interpolate()
