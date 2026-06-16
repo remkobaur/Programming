@@ -55,7 +55,7 @@ The tool creates `FundTools\fund_manual_values.xlsx` automatically if it does no
 - `value`
 - `notes`
 
-Accepted `series` values are `single_value`, `total_value`, `invest`, and `dividend`. In normal use, fill `invest` and `dividend`; the tool already derives `single_value` and `total_value`.
+Accepted `series` values are `single_value`, `total_value`, `invest`, `dividend`, and `sell`. In normal use, fill `invest`, `dividend`, and `sell`; the tool already derives `single_value` and `total_value`.
 
 `QuantityDatePairs` columns:
 
@@ -65,6 +65,29 @@ Accepted `series` values are `single_value`, `total_value`, `invest`, and `divid
 - `notes`
 
 Use `QuantityDatePairs` to supply quantity history as explicit date/quantity pairs.
+
+## Import Old DepotManager Data
+
+To import `_old\DepotManager_DB.xlsx` into `FundTools\fund_manual_values.xlsx`, run from `FundTools`:
+
+```powershell
+python .\import_depotmanager_db.py
+```
+
+The importer creates a timestamped backup of `fund_manual_values.xlsx` before writing. To preview the import without changing the workbook:
+
+```powershell
+python .\import_depotmanager_db.py --dry-run
+```
+
+Imported mapping:
+
+- old `History.quantity` -> `QuantityDatePairs`, compressed to quantity changes
+- old `Changes` buys -> `DateValuePairs` with `series = invest`
+- old `Changes` dividends/interest -> `DateValuePairs` with `series = dividend`
+- old `Changes` sells -> `DateValuePairs` with `series = sell`
+
+Old `History.value` rows are not imported into `DateValuePairs`; the main tool fetches price history online unless you add manual `single_value` rows yourself.
 
 Common options:
 

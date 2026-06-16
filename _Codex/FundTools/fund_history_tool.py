@@ -899,6 +899,193 @@ def scaled_line_points(
     return " ".join(f"{x_at(index):.1f},{y_at(value):.1f}" for index, value in series)
 
 
+def latest_total_value(quotes: list[Quote], quantity_points: list[QuantityPoint]) -> float | None:
+    for quote in reversed(quotes):
+        quantity = defined_quantity_at(quote.date, quantity_points)
+        if quantity is not None:
+            return quote.close * quantity
+    return None
+
+
+def pie_slice_path(cx: float, cy: float, radius: float, start_angle: float, end_angle: float) -> str:
+    start_x = cx + radius * math.cos(start_angle)
+    start_y = cy + radius * math.sin(start_angle)
+    end_x = cx + radius * math.cos(end_angle)
+    end_y = cy + radius * math.sin(end_angle)
+    large_arc = 1 if end_angle - start_angle > math.pi else 0
+    return (
+        f"M {cx:.1f} {cy:.1f} "
+        f"L {start_x:.1f} {start_y:.1f} "
+        f"A {radius:.1f} {radius:.1f} 0 {large_arc} 1 {end_x:.1f} {end_y:.1f} Z"
+    )
+
+
+def svg_portfolio_pie_chart(
+    results: list[tuple[Fund, str | None, str | None, list[Quote], str | None]],
+    quantity_histories: dict[str, list[QuantityPoint]],
+    width: int = 900,
+    height: int = 360,
+) -> str:
+    colors = [
+        "#1769aa",
+        "#2f8f83",
+        "#6f5aa8",
+        "#c07a2c",
+        "#d1495b",
+        "#4f5965",
+        "#1f9bb4",
+        "#7a8f2f",
+        "#9a5a7d",
+        "#b35b2a",
+        "#2d6f4f",
+    ]
+    totals: list[tuple[Fund, float]] = []
+    for fund, _source, _symbol, quotes, error in results:
+        if error:
+            continue
+        total_value = latest_total_value(quotes, quantity_histories.get(fund.isin, []))
+        if total_value is not None and total_value > 0:
+            totals.append((fund, total_value))
+
+    if not totals:
+        return (
+            "<section><h2>Portfolio allocation</h2>"
+            "<p>No total values available. Add quantity date pairs to show the allocation.</p></section>"
+        )
+
+    portfolio_total = sum(value for _fund, value in totals)
+    cx, cy, radius = 180.0, 178.0, 118.0
+    start_angle = -math.pi / 2
+    slice_markup = []
+    legend_markup = []
+    for index, (fund, value) in enumerate(totals):
+        share = value / portfolio_total
+        end_angle = start_angle + share * math.tau
+        color = colors[index % len(colors)]
+        if math.isclose(share, 1.0):
+            slice_markup.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{radius:.1f}" fill="{color}"/>')
+        else:
+            slice_markup.append(
+                f'<path d="{pie_slice_path(cx, cy, radius, start_angle, end_angle)}" fill="{color}"/>'
+            )
+        label_y = 74 + index * 22
+        label = fund.name or fund.isin
+        legend_markup.append(
+            f'<rect x="370" y="{label_y - 10}" width="12" height="12" fill="{color}"/>'
+            f'<text x="392" y="{label_y}" class="pie-legend">{html.escape(label)}</text>'
+            f'<text x="760" y="{label_y}" text-anchor="end" class="pie-legend">'
+            f'{share * 100:.1f}%</text>'
+            f'<text x="878" y="{label_y}" text-anchor="end" class="pie-legend">'
+            f'{value:,.0f}</text>'
+        )
+        start_angle = end_angle
+
+    return f"""
+<section>
+  <h2>Portfolio allocation</h2>
+  <svg viewBox="0 0 {width} {height}" role="img" aria-label="Portfolio allocation by total value">
+    <text x="{cx:.1f}" y="28" text-anchor="middle" class="pie-total">Total {portfolio_total:,.0f}</text>
+    {''.join(slice_markup)}
+    <circle cx="{cx:.1f}" cy="{cy:.1f}" r="{radius:.1f}" fill="none" class="pie-outline"/>
+    <text x="392" y="42" class="pie-header">Fund</text>
+    <text x="760" y="42" text-anchor="end" class="pie-header">Share</text>
+    <text x="878" y="42" text-anchor="end" class="pie-header">Value</text>
+    {''.join(legend_markup)}
+  </svg>
+</section>
+""".strip()
+
+
+def svg_portfolio_profit_bar_chart(
+    results: list[tuple[Fund, str | None, str | None, list[Quote], str | None]],
+    quantity_histories: dict[str, list[QuantityPoint]],
+    manual_date_values: dict[str, dict[str, list[DateValue]]],
+    width: int = 900,
+    height: int = 420,
+) -> str:
+    profits: list[tuple[Fund, float, float | None]] = []
+    for fund, _source, _symbol, quotes, error in results:
+        if error or not quotes:
+            continue
+        latest_quote = None
+        total_value = None
+        for quote in reversed(quotes):
+            quantity = defined_quantity_at(quote.date, quantity_histories.get(fund.isin, []))
+            if quantity is not None:
+                latest_quote = quote
+                total_value = quote.close * quantity
+                break
+        if latest_quote is None or total_value is None:
+            continue
+
+        series = manual_date_values.get(fund.isin, {})
+        invested = cumulative_value_at(latest_quote.date, series.get("invest", []))
+        dividend = cumulative_value_at(latest_quote.date, series.get("dividend", []))
+        sell = cumulative_value_at(latest_quote.date, series.get("sell", []))
+        profit = total_value - invested + dividend + sell
+        relative_profit = profit / invested * 100 if invested > 0 else None
+        profits.append((fund, profit, relative_profit))
+
+    if not profits:
+        return (
+            "<section><h2>Profit by fund</h2>"
+            "<p>No profit values available. Add quantity and invest date pairs to show the profit summary.</p></section>"
+        )
+
+    left, right = 260, width - 120
+    top, row_h = 46, 30
+    chart_h = max(1, len(profits) * row_h)
+    height = max(height, top + chart_h + 34)
+    max_abs_profit = max(abs(profit) for _fund, profit, _relative in profits)
+    if math.isclose(max_abs_profit, 0.0):
+        max_abs_profit = 1.0
+    zero_x = left + (right - left) / 2
+    scale = (right - left) / 2 / max_abs_profit
+
+    bar_markup = []
+    for index, (fund, profit, relative_profit) in enumerate(profits):
+        y = top + index * row_h
+        bar_y = y + 6
+        if profit >= 0:
+            x = zero_x
+            bar_w = profit * scale
+            css_class = "profit-bar-positive"
+        else:
+            x = zero_x + profit * scale
+            bar_w = abs(profit) * scale
+            css_class = "profit-bar-negative"
+        label = fund.name or fund.isin
+        relative_label = "" if relative_profit is None else f" ({relative_profit:+.1f}%)"
+        bar_markup.append(
+            f'<text x="{left - 12}" y="{y + 18}" text-anchor="end" class="bar-label">'
+            f'{html.escape(label)}</text>'
+            f'<rect x="{x:.1f}" y="{bar_y:.1f}" width="{bar_w:.1f}" height="16" class="{css_class}"/>'
+            f'<text x="{right + 10}" y="{y + 18}" class="bar-value">'
+            f'{profit:,.0f}{html.escape(relative_label)}</text>'
+        )
+
+    tick_values = [-max_abs_profit, 0.0, max_abs_profit]
+    tick_markup = []
+    for tick in tick_values:
+        x = zero_x + tick * scale
+        tick_markup.append(
+            f'<line x1="{x:.1f}" y1="{top - 8}" x2="{x:.1f}" y2="{top + chart_h}" class="bar-grid"/>'
+            f'<text x="{x:.1f}" y="{height - 10}" text-anchor="middle" class="bar-axis">{tick:,.0f}</text>'
+        )
+
+    return f"""
+<section>
+  <h2>Profit by fund</h2>
+  <svg viewBox="0 0 {width} {height}" role="img" aria-label="Profit by fund">
+    <text x="{left}" y="24" class="bar-axis">absolute profit</text>
+    <text x="{right + 10}" y="24" class="bar-axis">profit / invested</text>
+    {''.join(tick_markup)}
+    {''.join(bar_markup)}
+  </svg>
+</section>
+""".strip()
+
+
 def svg_line_chart(
     title: str,
     quotes: list[Quote],
@@ -944,18 +1131,22 @@ def svg_line_chart(
             for tick_index in range(4)
         }
     )
-    x_tick_markup = []
-    for tick_index in x_tick_indices:
-        quote = quotes[tick_index]
-        anchor = "middle"
-        if tick_index == 0:
-            anchor = "start"
-        elif tick_index == len(quotes) - 1:
-            anchor = "end"
-        x_tick_markup.append(
-            f'<text x="{x_at(tick_index):.1f}" y="{height - 10}" text-anchor="{anchor}">'
-            f'{html.escape(format_month_year(quote.date))}</text>'
-        )
+    def x_tick_labels(x_position) -> str:
+        tick_markup = []
+        for tick_index in x_tick_indices:
+            quote = quotes[tick_index]
+            anchor = "middle"
+            if tick_index == 0:
+                anchor = "start"
+            elif tick_index == len(quotes) - 1:
+                anchor = "end"
+            tick_markup.append(
+                f'<text x="{x_position(tick_index):.1f}" y="{height - 10}" text-anchor="{anchor}">'
+                f'{html.escape(format_month_year(quote.date))}</text>'
+            )
+        return "".join(tick_markup)
+
+    x_tick_markup = x_tick_labels(x_at)
     y_ticks = [min_y + (max_y - min_y) * i / 4 for i in range(5)]
     buy_index = buy_quote_index(quotes, buy_date)
     buy_value = quotes[buy_index].close if buy_index is not None else None
@@ -1032,6 +1223,7 @@ def svg_line_chart(
             f'<line x1="{total_right}" y1="{pad_top}" x2="{total_right}" y2="{height - pad_bottom}" class="relative-axis-line"/>'
             f'{"".join(total_tick_markup)}'
             f'<polyline points="{total_points}" fill="none" class="total-line"/>'
+            f'{x_tick_labels(subplot_x)}'
         )
 
     profit_markup = ""
@@ -1122,6 +1314,7 @@ def svg_line_chart(
                 f'{"".join(profit_tick_markup)}'
                 f'<polyline points="{absolute_points}" fill="none" class="profit-line"/>'
                 f'{relative_markup}'
+                f'{x_tick_labels(lambda index: profit_left + (panel_w / 2 if len(quotes) == 1 else panel_w * index / (len(quotes) - 1)))}'
             )
 
     return f"""
@@ -1150,7 +1343,10 @@ def write_html_report(
     manual_date_values: dict[str, dict[str, list[DateValue]]],
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    charts = []
+    charts = [
+        svg_portfolio_pie_chart(results, quantity_histories),
+        svg_portfolio_profit_bar_chart(results, quantity_histories, manual_date_values),
+    ]
     for fund, source, symbol, quotes, error in results:
         title = f"{fund.isin}"
         if source:
@@ -1201,6 +1397,27 @@ def write_html_report(
     .profit-relative-axis {{ font-size: 12px; fill: #8b5d33; }}
     .profit-line {{ stroke: #6f5aa8; stroke-width: 2; }}
     .profit-relative-line {{ stroke: #c07a2c; stroke-width: 2; stroke-dasharray: 5 4; }}
+    .pie-outline {{ stroke: #fff; stroke-width: 2; }}
+    .pie-total {{ font-size: 14px; font-weight: 700; fill: #18202a; }}
+    .pie-header {{ font-size: 12px; font-weight: 700; fill: #384250; }}
+    .pie-legend {{ font-size: 12px; fill: #384250; }}
+    .bar-grid {{ stroke: #d6dbe2; stroke-width: 1; }}
+    .bar-axis {{ font-size: 12px; fill: #5d6673; }}
+    .bar-label {{ font-size: 12px; fill: #384250; }}
+    .bar-value {{ font-size: 12px; fill: #384250; }}
+    .profit-bar-positive {{ fill: #2f8f83; }}
+    .profit-bar-negative {{ fill: #d1495b; }}
+    @media print {{
+      body {{ margin: 12mm; background: #fff; }}
+      section {{
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }}
+      svg {{
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }}
+    }}
   </style>
 </head>
 <body>
@@ -1313,4 +1530,5 @@ def main(argv: list[str] | None = None, manual_data_filename: str = "fund_manual
 
 if __name__ == "__main__":
     MANUAL_DATA_FILE = "fund_manual_values.xlsx"
+    # MANUAL_DATA_FILE =(Path(r"C:\Users\remko\Desktop\0_Nas\1_Remko\Unterlagen\Banking\_Data") / "fund_manual_values.xlsx").resolve()
     raise SystemExit(main(manual_data_filename=MANUAL_DATA_FILE))
