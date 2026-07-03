@@ -15,6 +15,7 @@ import datetime as dt
 import html
 import json
 import math
+import os
 import re
 import sys
 import time
@@ -32,6 +33,56 @@ NS = {
     "main": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
     "rel": "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
 }
+
+FUND_COLORS = [
+    "#1769aa",
+    "#2f8f83",
+    "#6f5aa8",
+    "#c07a2c",
+    "#d1495b",
+    "#4f5965",
+    "#1f9bb4",
+    "#7a8f2f",
+    "#9a5a7d",
+    "#b35b2a",
+    "#2d6f4f",
+    "#6b6ecf",
+    "#e377c2",
+    "#8c564b",
+    "#17becf",
+    "#bcbd22",
+    "#9467bd",
+    "#ff7f0e",
+    "#2ca02c",
+    "#7f7f7f",
+]
+
+CACHE_STATS = {
+    "cache_reads": 0,
+    "online_requests": 0,
+}
+
+
+def load_dotenv(path: Path) -> None:
+    if not path.exists():
+        return
+
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+
+        name, value = stripped.split("=", 1)
+        name = name.strip()
+        value = value.strip().strip("\"'")
+        if name and name not in os.environ:
+            os.environ[name] = value
+
+
+def load_project_env() -> None:
+    script_dir = Path(__file__).resolve().parent
+    for env_path in (script_dir.parent / ".env", script_dir / ".env"):
+        load_dotenv(env_path)
 
 
 @dataclass(frozen=True)
@@ -555,6 +606,19 @@ def http_get_json(url: str, timeout: int = 30) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
+def read_json_cache(cache_file: Path, refresh: bool) -> dict | None:
+    if cache_file.exists() and not refresh:
+        CACHE_STATS["cache_reads"] += 1
+        return json.loads(cache_file.read_text(encoding="utf-8"))
+    return None
+
+
+def write_json_cache(cache_file: Path, data: dict) -> None:
+    CACHE_STATS["online_requests"] += 1
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(json.dumps(data), encoding="utf-8")
+
+
 def parse_onvista_date(timestamp_ms: int | float) -> str:
     timestamp = float(timestamp_ms) / 1000
     return dt.datetime.fromtimestamp(timestamp, tz=dt.UTC).date().isoformat()
@@ -627,10 +691,12 @@ def resolve_yahoo_symbol(
     if cache_file.exists():
         cache = json.loads(cache_file.read_text(encoding="utf-8"))
     if isin in cache and not refresh:
+        CACHE_STATS["cache_reads"] += 1
         return cache[isin]
 
     params = urllib.parse.urlencode({"q": isin, "quotesCount": 10, "newsCount": 0})
     url = f"https://query2.finance.yahoo.com/v1/finance/search?{params}"
+    CACHE_STATS["online_requests"] += 1
     data = http_get_json(url)
     quotes = data.get("quotes", [])
     symbol = None
@@ -654,14 +720,12 @@ def resolve_yahoo_symbol(
 def download_history(symbol: str, cache_dir: Path, period: str, interval: str, refresh: bool = False) -> list[Quote]:
     safe_symbol = re.sub(r"[^A-Za-z0-9_.=-]", "_", symbol)
     cache_file = cache_dir / "history" / f"{safe_symbol}_{period}_{interval}.json"
-    if cache_file.exists() and not refresh:
-        data = json.loads(cache_file.read_text(encoding="utf-8"))
-    else:
+    data = read_json_cache(cache_file, refresh)
+    if data is None:
         params = urllib.parse.urlencode({"range": period, "interval": interval, "events": "history"})
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(symbol)}?{params}"
         data = http_get_json(url)
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-        cache_file.write_text(json.dumps(data), encoding="utf-8")
+        write_json_cache(cache_file, data)
 
     result = data.get("chart", {}).get("result") or []
     if not result:
@@ -682,14 +746,12 @@ def download_history(symbol: str, cache_dir: Path, period: str, interval: str, r
 
 def search_onvista_instrument(isin: str, cache_dir: Path, refresh: bool = False) -> dict | None:
     cache_file = cache_dir / "onvista_search" / f"{isin}.json"
-    if cache_file.exists() and not refresh:
-        data = json.loads(cache_file.read_text(encoding="utf-8"))
-    else:
+    data = read_json_cache(cache_file, refresh)
+    if data is None:
         params = urllib.parse.urlencode({"searchValue": isin})
         url = f"https://api.onvista.de/api/v1/instruments/search?{params}"
         data = http_get_json(url)
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-        cache_file.write_text(json.dumps(data), encoding="utf-8")
+        write_json_cache(cache_file, data)
 
     for item in data.get("list", []):
         if item.get("entityType") == "FUND":
@@ -700,8 +762,9 @@ def search_onvista_instrument(isin: str, cache_dir: Path, refresh: bool = False)
 def fetch_onvista_snapshot(item: dict, cache_dir: Path, refresh: bool = False) -> dict:
     entity_value = item["entityValue"]
     cache_file = cache_dir / "onvista_snapshot" / f"{entity_value}.json"
-    if cache_file.exists() and not refresh:
-        return json.loads(cache_file.read_text(encoding="utf-8"))
+    data = read_json_cache(cache_file, refresh)
+    if data is not None:
+        return data
 
     url = item.get("urls", {}).get("WEBSITE")
     if not url:
@@ -721,8 +784,7 @@ def fetch_onvista_snapshot(item: dict, cache_dir: Path, refresh: bool = False) -
         raise ValueError("Onvista page did not contain embedded snapshot data.")
     page_data = json.loads(html.unescape(match.group(1)))
     snapshot = page_data["props"]["pageProps"]["data"]["snapshot"]
-    cache_file.parent.mkdir(parents=True, exist_ok=True)
-    cache_file.write_text(json.dumps(snapshot), encoding="utf-8")
+    write_json_cache(cache_file, snapshot)
     return snapshot
 
 
@@ -750,14 +812,12 @@ def download_onvista_history(isin: str, cache_dir: Path, period: str, refresh: b
     params = {key: value for key, value in params.items() if value is not None}
     cache_name = f"{entity_value}_{params.get('idNotation', 'default')}_{params['range']}.json"
     cache_file = cache_dir / "onvista_history" / cache_name
-    if cache_file.exists() and not refresh:
-        data = json.loads(cache_file.read_text(encoding="utf-8"))
-    else:
+    data = read_json_cache(cache_file, refresh)
+    if data is None:
         query = urllib.parse.urlencode(params)
         url = f"https://api.onvista.de/api/v1/instruments/FUND/{entity_value}/simple_chart_history?{query}"
         data = http_get_json(url)
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-        cache_file.write_text(json.dumps(data), encoding="utf-8")
+        write_json_cache(cache_file, data)
 
     quotes: list[Quote] = []
     for timestamp, value in zip(data.get("datetimeTick", []), data.get("tick", [])):
@@ -787,9 +847,8 @@ def onvista_range_from_period(period: str) -> str:
 
 def download_deka_current_value(isin: str, cache_dir: Path, refresh: bool = False) -> HistoryResult | None:
     cache_file = cache_dir / "deka_search" / f"{isin}.json"
-    if cache_file.exists() and not refresh:
-        data = json.loads(cache_file.read_text(encoding="utf-8"))
-    else:
+    data = read_json_cache(cache_file, refresh)
+    if data is None:
         params = urllib.parse.urlencode(
             {
                 "service": "fondssucheController",
@@ -800,8 +859,7 @@ def download_deka_current_value(isin: str, cache_dir: Path, refresh: bool = Fals
         )
         url = f"https://www.deka.de/privatkunden-functions/fondssuche?{params}"
         data = http_get_json(url)
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-        cache_file.write_text(json.dumps(data), encoding="utf-8")
+        write_json_cache(cache_file, data)
 
     funds = data.get("fonds") or []
     if not funds:
@@ -869,6 +927,17 @@ def cumulative_value_at(date: str, values: list[DateValue]) -> float:
     return total
 
 
+def cumulative_value_between(start_date: str, end_date: str, values: list[DateValue]) -> float:
+    total = 0.0
+    for point in values:
+        if point.date <= start_date:
+            continue
+        if point.date > end_date:
+            break
+        total += point.value
+    return total
+
+
 def format_month_year(date_value: str) -> str:
     try:
         return dt.date.fromisoformat(date_value).strftime("%m/%Y")
@@ -907,6 +976,15 @@ def latest_total_value(quotes: list[Quote], quantity_points: list[QuantityPoint]
     return None
 
 
+def quote_at_or_before(date: str, quotes: list[Quote]) -> Quote | None:
+    latest_quote = None
+    for quote in quotes:
+        if quote.date > date:
+            break
+        latest_quote = quote
+    return latest_quote
+
+
 def pie_slice_path(cx: float, cy: float, radius: float, start_angle: float, end_angle: float) -> str:
     start_x = cx + radius * math.cos(start_angle)
     start_y = cy + radius * math.sin(start_angle)
@@ -926,19 +1004,6 @@ def svg_portfolio_pie_chart(
     width: int = 900,
     height: int = 360,
 ) -> str:
-    colors = [
-        "#1769aa",
-        "#2f8f83",
-        "#6f5aa8",
-        "#c07a2c",
-        "#d1495b",
-        "#4f5965",
-        "#1f9bb4",
-        "#7a8f2f",
-        "#9a5a7d",
-        "#b35b2a",
-        "#2d6f4f",
-    ]
     totals: list[tuple[Fund, float]] = []
     for fund, _source, _symbol, quotes, error in results:
         if error:
@@ -961,7 +1026,7 @@ def svg_portfolio_pie_chart(
     for index, (fund, value) in enumerate(totals):
         share = value / portfolio_total
         end_angle = start_angle + share * math.tau
-        color = colors[index % len(colors)]
+        color = FUND_COLORS[index % len(FUND_COLORS)]
         if math.isclose(share, 1.0):
             slice_markup.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{radius:.1f}" fill="{color}"/>')
         else:
@@ -990,6 +1055,316 @@ def svg_portfolio_pie_chart(
     <text x="392" y="42" class="pie-header">Fund</text>
     <text x="760" y="42" text-anchor="end" class="pie-header">Share</text>
     <text x="878" y="42" text-anchor="end" class="pie-header">Value</text>
+    {''.join(legend_markup)}
+  </svg>
+</section>
+""".strip()
+
+
+def portfolio_total_profit_series(
+    results: list[tuple[Fund, str | None, str | None, list[Quote], str | None]],
+    quantity_histories: dict[str, list[QuantityPoint]],
+    manual_date_values: dict[str, dict[str, list[DateValue]]],
+) -> list[DateValue]:
+    dates = sorted(
+        {
+            quote.date
+            for _fund, _source, _symbol, quotes, error in results
+            if not error
+            for quote in quotes
+        }
+    )
+    series: list[DateValue] = []
+    for date in dates:
+        total_profit = 0.0
+        has_profit = False
+        for fund, _source, _symbol, quotes, error in results:
+            if error or not quotes:
+                continue
+            quote = quote_at_or_before(date, quotes)
+            if quote is None:
+                continue
+            quantity = defined_quantity_at(date, quantity_histories.get(fund.isin, []))
+            if quantity is None:
+                continue
+
+            manual_series = manual_date_values.get(fund.isin, {})
+            total_value = quote.close * quantity
+            invested = cumulative_value_at(date, manual_series.get("invest", []))
+            dividend = cumulative_value_at(date, manual_series.get("dividend", []))
+            sell = cumulative_value_at(date, manual_series.get("sell", []))
+            total_profit += total_value - invested + dividend + sell
+            has_profit = True
+
+        if has_profit:
+            series.append(DateValue(date=date, value=total_profit))
+    return series
+
+
+def svg_portfolio_total_profit_chart(
+    results: list[tuple[Fund, str | None, str | None, list[Quote], str | None]],
+    quantity_histories: dict[str, list[QuantityPoint]],
+    manual_date_values: dict[str, dict[str, list[DateValue]]],
+    width: int = 900,
+    height: int = 300,
+) -> str:
+    series = portfolio_total_profit_series(results, quantity_histories, manual_date_values)
+    if not series:
+        return (
+            "<section><h2>Total profit over time</h2>"
+            "<p>No total profit values available. Add quantity and invest date pairs to show total profit.</p></section>"
+        )
+
+    left, right = 70, width - 28
+    top, bottom = 28, 38
+    plot_h = height - top - bottom
+    plot_w = right - left
+    points_by_year: dict[int, list[tuple[int, DateValue]]] = {}
+    for index, point in enumerate(series):
+        try:
+            year = dt.date.fromisoformat(point.date).year
+        except ValueError:
+            continue
+        points_by_year.setdefault(year, []).append((index, point))
+
+    annual_values: list[tuple[int, int, int, float]] = []
+    for year, year_points in sorted(points_by_year.items()):
+        start_index, start_point = year_points[0]
+        end_index, end_point = year_points[-1]
+        annual_values.append((year, start_index, end_index, end_point.value - start_point.value))
+
+    values = [point.value for point in series] + [value for _year, _start, _end, value in annual_values]
+    min_value = min(0.0, min(values))
+    max_value = max(0.0, max(values))
+    if math.isclose(min_value, max_value):
+        min_value, max_value = -1.0, 1.0
+    else:
+        padding = (max_value - min_value) * 0.08
+        min_value -= padding
+        max_value += padding
+
+    def x_at(index: int) -> float:
+        if len(series) == 1:
+            return left + plot_w / 2
+        return left + plot_w * index / (len(series) - 1)
+
+    def y_at(value: float) -> float:
+        return top + plot_h - (value - min_value) * plot_h / (max_value - min_value)
+
+    points = " ".join(f"{x_at(index):.1f},{y_at(point.value):.1f}" for index, point in enumerate(series))
+    y_ticks = [min_value + (max_value - min_value) * index / 4 for index in range(5)]
+    tick_markup = []
+    for tick in y_ticks:
+        y = y_at(tick)
+        tick_markup.append(
+            f'<line x1="{left}" y1="{y:.1f}" x2="{right}" y2="{y:.1f}" class="grid"/>'
+            f'<text x="{left - 8}" y="{y + 4:.1f}" text-anchor="end" class="bar-axis">{tick:,.0f}</text>'
+        )
+
+    zero_y = y_at(0.0)
+    year_line_markup = []
+    previous_year = None
+    for index, point in enumerate(series):
+        try:
+            year = dt.date.fromisoformat(point.date).year
+        except ValueError:
+            continue
+        if previous_year is not None and year != previous_year:
+            x = x_at(index)
+            year_line_markup.append(
+                f'<line x1="{x:.1f}" y1="{top}" x2="{x:.1f}" y2="{top + plot_h}" class="bar-grid"/>'
+            )
+        previous_year = year
+
+    annual_bar_markup = []
+    for year, start_index, end_index, value in annual_values:
+        start_x = x_at(start_index)
+        end_x = x_at(end_index)
+        center_x = (start_x + end_x) / 2
+        available_w = max(8.0, end_x - start_x)
+        bar_w = min(42.0, available_w * 0.42)
+        value_y = y_at(value)
+        rect_y = min(value_y, zero_y)
+        rect_h = max(1.0, abs(zero_y - value_y))
+        css_class = "portfolio-profit-bar-positive" if value >= 0 else "portfolio-profit-bar-negative"
+        annual_bar_markup.append(
+            f'<rect x="{center_x - bar_w / 2:.1f}" y="{rect_y:.1f}" width="{bar_w:.1f}" height="{rect_h:.1f}" '
+            f'class="{css_class}"><title>{year}: {value:,.0f}</title></rect>'
+        )
+
+    x_tick_indices = sorted({round((len(series) - 1) * index / 3) for index in range(4)})
+    x_tick_markup = []
+    for index in x_tick_indices:
+        anchor = "middle"
+        if index == 0:
+            anchor = "start"
+        elif index == len(series) - 1:
+            anchor = "end"
+        x_tick_markup.append(
+            f'<text x="{x_at(index):.1f}" y="{height - 10}" text-anchor="{anchor}" class="bar-axis">'
+            f'{html.escape(format_month_year(series[index].date))}</text>'
+        )
+
+    latest = series[-1]
+    return f"""
+<section>
+  <h2>Total profit over time</h2>
+  <svg viewBox="0 0 {width} {height}" role="img" aria-label="Total profit over time">
+    <text x="{left}" y="18" class="bar-axis">sum of total profit</text>
+    {''.join(tick_markup)}
+    {''.join(year_line_markup)}
+    <line x1="{left}" y1="{zero_y:.1f}" x2="{right}" y2="{zero_y:.1f}" class="relative-axis-line"/>
+    {''.join(annual_bar_markup)}
+    <polyline points="{points}" fill="none" class="portfolio-profit-line"/>
+    <circle cx="{x_at(len(series) - 1):.1f}" cy="{y_at(latest.value):.1f}" r="3" class="point"/>
+    <text x="{right}" y="{top + 14}" text-anchor="end" class="bar-value">latest {latest.value:,.0f}</text>
+    {''.join(x_tick_markup)}
+  </svg>
+</section>
+""".strip()
+
+
+def yearly_relative_profit_points(
+    fund: Fund,
+    quotes: list[Quote],
+    quantity_histories: dict[str, list[QuantityPoint]],
+    manual_date_values: dict[str, dict[str, list[DateValue]]],
+) -> dict[int, float]:
+    quotes_by_year: dict[int, list[Quote]] = {}
+    for quote in quotes:
+        try:
+            year = dt.date.fromisoformat(quote.date).year
+        except ValueError:
+            continue
+        quotes_by_year.setdefault(year, []).append(quote)
+
+    quantity_points = quantity_histories.get(fund.isin, [])
+    series = manual_date_values.get(fund.isin, {})
+    annual_profit: dict[int, float] = {}
+    for year, year_quotes in sorted(quotes_by_year.items()):
+        start_quote = year_quotes[0]
+        end_quote = year_quotes[-1]
+        start_quantity = defined_quantity_at(start_quote.date, quantity_points)
+        end_quantity = defined_quantity_at(end_quote.date, quantity_points)
+        if start_quantity is None or end_quantity is None:
+            continue
+        start_value = start_quote.close * start_quantity
+        if start_value <= 0:
+            continue
+        end_value = end_quote.close * end_quantity
+        invested = cumulative_value_between(start_quote.date, end_quote.date, series.get("invest", []))
+        dividend = cumulative_value_between(start_quote.date, end_quote.date, series.get("dividend", []))
+        sell = cumulative_value_between(start_quote.date, end_quote.date, series.get("sell", []))
+        annual_profit[year] = (end_value - start_value - invested + dividend + sell) / start_value * 100
+    return annual_profit
+
+
+def svg_yearly_relative_profit_bar_chart(
+    results: list[tuple[Fund, str | None, str | None, list[Quote], str | None]],
+    quantity_histories: dict[str, list[QuantityPoint]],
+    manual_date_values: dict[str, dict[str, list[DateValue]]],
+    width: int = 900,
+    height: int = 420,
+) -> str:
+    series_by_fund: list[tuple[Fund, str, dict[int, float]]] = []
+    for index, (fund, _source, _symbol, quotes, error) in enumerate(results):
+        if error or not quotes:
+            continue
+        series = yearly_relative_profit_points(fund, quotes, quantity_histories, manual_date_values)
+        if series:
+            color = FUND_COLORS[index % len(FUND_COLORS)]
+            series_by_fund.append((fund, color, series))
+
+    years = sorted({year for _fund, _color, series in series_by_fund for year in series})
+    if not series_by_fund or not years:
+        return (
+            "<section><h2>Relative profit by year</h2>"
+            "<p>No yearly relative profit values available. Add quantity and invest date pairs to show yearly profit.</p></section>"
+        )
+
+    left, right = 58, width - 230
+    top, bottom = 34, 54
+    plot_h = height - top - bottom
+    plot_w = right - left
+    values = [value for _fund, _color, series in series_by_fund for value in series.values()]
+    min_value = min(0.0, min(values))
+    max_value = max(0.0, max(values))
+    if math.isclose(min_value, max_value):
+        min_value, max_value = -1.0, 1.0
+    else:
+        padding = (max_value - min_value) * 0.08
+        min_value -= padding
+        max_value += padding
+
+    def y_at(value: float) -> float:
+        return top + plot_h - (value - min_value) * plot_h / (max_value - min_value)
+
+    zero_y = y_at(0.0)
+    group_w = plot_w / max(1, len(years))
+    gap = min(18.0, group_w * 0.18)
+    bar_gap = 2.0
+    bar_w = max(2.0, (group_w - gap) / max(1, len(series_by_fund)) - bar_gap)
+
+    tick_markup = []
+    for index in range(5):
+        tick = min_value + (max_value - min_value) * index / 4
+        y = y_at(tick)
+        tick_markup.append(
+            f'<line x1="{left}" y1="{y:.1f}" x2="{right}" y2="{y:.1f}" class="bar-grid"/>'
+            f'<text x="{left - 8}" y="{y + 4:.1f}" text-anchor="end" class="bar-axis">{tick:+.0f}%</text>'
+        )
+
+    separator_markup = []
+    for year_index in range(1, len(years)):
+        x = left + year_index * group_w
+        separator_markup.append(
+            f'<line x1="{x:.1f}" y1="{top}" x2="{x:.1f}" y2="{top + plot_h}" class="bar-grid"/>'
+        )
+
+    bar_markup = []
+    for year_index, year in enumerate(years):
+        group_left = left + year_index * group_w + gap / 2
+        for fund_index, (_fund, color, series) in enumerate(series_by_fund):
+            if year not in series:
+                continue
+            value = series[year]
+            value_y = y_at(value)
+            rect_y = min(value_y, zero_y)
+            rect_h = max(1.0, abs(zero_y - value_y))
+            x = group_left + fund_index * (bar_w + bar_gap)
+            bar_markup.append(
+                f'<rect x="{x:.1f}" y="{rect_y:.1f}" width="{bar_w:.1f}" height="{rect_h:.1f}" '
+                f'fill="{color}"><title>{html.escape(_fund.name or _fund.isin)} {year}: {value:+.1f}%</title></rect>'
+            )
+
+    year_markup = []
+    for year_index, year in enumerate(years):
+        x = left + year_index * group_w + group_w / 2
+        year_markup.append(
+            f'<text x="{x:.1f}" y="{height - 16}" text-anchor="middle" class="bar-axis">{year}</text>'
+        )
+
+    legend_markup = []
+    legend_x = right + 28
+    for index, (fund, color, _series) in enumerate(series_by_fund):
+        y = top + 16 + index * 20
+        label = fund.name or fund.isin
+        legend_markup.append(
+            f'<rect x="{legend_x}" y="{y - 10}" width="12" height="12" fill="{color}"/>'
+            f'<text x="{legend_x + 20}" y="{y}" class="yearly-profit-legend">{html.escape(label)}</text>'
+        )
+
+    return f"""
+<section>
+  <h2>Relative profit by year</h2>
+  <svg viewBox="0 0 {width} {height}" role="img" aria-label="Relative profit by year">
+    <text x="{left}" y="18" class="bar-axis">profit / start value</text>
+    {''.join(tick_markup)}
+    {''.join(separator_markup)}
+    <line x1="{left}" y1="{zero_y:.1f}" x2="{right}" y2="{zero_y:.1f}" class="relative-axis-line"/>
+    {''.join(bar_markup)}
+    {''.join(year_markup)}
+    <text x="{legend_x}" y="18" class="pie-header">Fund</text>
     {''.join(legend_markup)}
   </svg>
 </section>
@@ -1346,6 +1721,8 @@ def write_html_report(
     charts = [
         svg_portfolio_pie_chart(results, quantity_histories),
         svg_portfolio_profit_bar_chart(results, quantity_histories, manual_date_values),
+        svg_yearly_relative_profit_bar_chart(results, quantity_histories, manual_date_values),
+        svg_portfolio_total_profit_chart(results, quantity_histories, manual_date_values),
     ]
     for fund, source, symbol, quotes, error in results:
         title = f"{fund.isin}"
@@ -1397,6 +1774,9 @@ def write_html_report(
     .profit-relative-axis {{ font-size: 12px; fill: #8b5d33; }}
     .profit-line {{ stroke: #6f5aa8; stroke-width: 2; }}
     .profit-relative-line {{ stroke: #c07a2c; stroke-width: 2; stroke-dasharray: 5 4; }}
+    .portfolio-profit-line {{ stroke: #2d6f4f; stroke-width: 2.4; }}
+    .portfolio-profit-bar-positive {{ fill: #2f8f83; opacity: 0.28; }}
+    .portfolio-profit-bar-negative {{ fill: #d1495b; opacity: 0.28; }}
     .pie-outline {{ stroke: #fff; stroke-width: 2; }}
     .pie-total {{ font-size: 14px; font-weight: 700; fill: #18202a; }}
     .pie-header {{ font-size: 12px; font-weight: 700; fill: #384250; }}
@@ -1404,6 +1784,7 @@ def write_html_report(
     .bar-grid {{ stroke: #d6dbe2; stroke-width: 1; }}
     .bar-axis {{ font-size: 12px; fill: #5d6673; }}
     .bar-label {{ font-size: 12px; fill: #384250; }}
+    .yearly-profit-legend {{ font-size: 10px; fill: #384250; }}
     .bar-value {{ font-size: 12px; fill: #384250; }}
     .profit-bar-positive {{ fill: #2f8f83; }}
     .profit-bar-negative {{ fill: #d1495b; }}
@@ -1443,6 +1824,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None, manual_data_filename: str = "fund_manual_values.xlsx") -> int:
+    CACHE_STATS["cache_reads"] = 0
+    CACHE_STATS["online_requests"] = 0
     args = build_arg_parser().parse_args(argv)
     base_dir = Path(__file__).resolve().parent
     output_dir = (base_dir / args.output_dir).resolve()
@@ -1525,10 +1908,15 @@ def main(argv: list[str] | None = None, manual_data_filename: str = "fund_manual
     print(f"Wrote {output_dir / 'fund_history_report.html'}")
     print(f"Wrote {output_dir / 'extended_fund_data.json'}")
     print(f"Wrote/checked {manual_data_path}")
+    print(
+        "Data cache: "
+        f"{CACHE_STATS['cache_reads']} cached reads, "
+        f"{CACHE_STATS['online_requests']} online requests."
+    )
     return 0
 
 
 if __name__ == "__main__":
-    MANUAL_DATA_FILE = "fund_manual_values.xlsx"
-    # MANUAL_DATA_FILE =(Path(r"C:\Users\remko\Desktop\0_Nas\1_Remko\Unterlagen\Banking\_Data") / "fund_manual_values.xlsx").resolve()
+    load_project_env()
+    MANUAL_DATA_FILE = os.environ.get("MANUAL_DATA_FILE") or "fund_manual_values.xlsx"
     raise SystemExit(main(manual_data_filename=MANUAL_DATA_FILE))
