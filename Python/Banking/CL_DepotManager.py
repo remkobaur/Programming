@@ -445,7 +445,17 @@ class CL_DepotManager:
                 ax.step(signal.index, signal.values, 
                         label=fund.isin if self.legend_mode == "isin" else fund.name, 
                         where='post', color=fund.lineColor)  # Use the assigned line color
+        elif subplot_config.plot_mode == "semilogy":
+            for fund in self.funds:
+                signal = getattr(fund.signals, subplot_config.signalName, None)
+                if signal is None or signal.empty:
+                    print(f"No data to for <{subplot_config.signalName}> of fund: {fund.isin}")
+                    continue
 
+                ax.step(signal.index, signal.values,
+                        label=fund.isin if self.legend_mode == "isin" else fund.name,
+                        where='post', color=fund.lineColor)  # Use stepped lines with assigned color
+            ax.set_yscale("log")
         if subplot_config.plot_total:
             # Plot self.total_fund.signals on the second y-axis
             total_signal = getattr(self.total_fund.signals, subplot_config.signalName, None)
@@ -509,7 +519,7 @@ class CL_DepotManager:
             xlabel="Date", 
             ylabel="invest [EUR]", 
             title="Invest of each Fund",
-            plot_mode="step",
+            plot_mode="step", # "semilogy", "step"
             plot_total=True
             ), ax=axs[1,0])    
         self.create_subplot_with_total_by_signalname(subplot_config=CL_SubplotConfig(
@@ -695,7 +705,7 @@ if __name__ == "__main__":
     dm.xls_import_df_data(path.join(dm.data_path, "DepotManager_DWS_monthly_history.xlsx"))
     dm.xls_export_df_data()
     
-    # dm.df_filter_start_date(start_date=pd.to_datetime("2023-07-01"))    
+    dm.df_filter_start_date(start_date=pd.to_datetime("2023-04-01"))    
     # dm.df_filter_end_date(end_date=pd.to_datetime("2023-05-01"))
     
     # get quaterly online values for each fund and add to history, then export to xls
@@ -707,14 +717,15 @@ if __name__ == "__main__":
     # import online values from xls and plot
     
     
+    # dm.df_filter_isin(isin_list=["DE000A12BSB8"])  # Fokus Wohnen only
     # dm.df_filter_isin(isin_list=["LU0323578657","LU0553164731"])  # LU only
     # dm.df_filter_isin(isin_list=["DE000DK09V66","DE000DK09WE5"])  # DEKA only
-    dm.df_filter_isin(isin_list=["DE000DK0LP06","DE000DK0LP22"])  # Deka Connect+
+    # dm.df_filter_isin(isin_list=["DE000DK0LP06","DE000DK0LP22"])  # Deka Connect+
     # dm.df_filter_isin(isin_list=["DE000PF99QV6","DE000A1A6QU4"])  # e.g.["DE000DK09V66","DE000DK09WE5","DE0009769794"]
     
     # dm.df_filter_isin(isin_list=["DE0008490673"]) 
 
-    dm.df_filter_isin_not(isin_list=["DE000A1A6QU4","DE000PF99QV6"])  # ignore sold funds 
+    dm.df_filter_isin_not(isin_list=["DE000A1A6QU4","DE000PF99QV6","LU0323578657"])  # ignore sold funds 
     # dm.df_filter_isin_not(isin_list=["DE0009769794","DE0008474008","DE0008490673","DE000A1A6QU4","DE000A12BSB8"])  # dividend calc
     dm.create_funds(reset_profit=False)
     dm.interpolate_signals("M")    
