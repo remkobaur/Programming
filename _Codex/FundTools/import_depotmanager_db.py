@@ -9,18 +9,24 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-from fund_history_tool import parse_excel_date, parse_float, read_xlsx_rows, rows_from_dicts, write_xlsx
+from fund_history_tool import (
+    configured_data_dir,
+    configured_input_data_dir,
+    load_project_env,
+    parse_excel_date,
+    parse_float,
+    read_xlsx_rows,
+    rows_from_dicts,
+    write_xlsx,
+)
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-ROOT_DIR = SCRIPT_DIR.parent
-DEFAULT_OLD_WORKBOOK = ROOT_DIR / "_old" / "DepotManager_DB.xlsx"
-DEFAULT_MANUAL_WORKBOOK = SCRIPT_DIR / "fund_manual_values.xlsx"
 #
 # DEFAULT_OLD_WORKBOOK = Path(r"C:\Users\remko\Desktop\0_Nas\1_Remko\Unterlagen\Banking\_Data\DepotManager_DB.xlsx")
 # DEFAULT_MANUAL_WORKBOOK = Path(r"C:\Users\remko\Desktop\0_Nas\1_Remko\Unterlagen\Banking\_Data") / "fund_manual_values.xlsx"
 #
-SCALAR_HEADERS = ["isin", "name", "buy_date", "sell_date", "status", "notes"]
+SCALAR_HEADERS = ["isin", "name", "bank", "buy_date", "sell_date", "status", "notes"]
 DATE_VALUE_HEADERS = ["isin", "series", "date", "value", "notes"]
 QUANTITY_HEADERS = ["isin", "date", "quantity", "notes"]
 ISIN_PATTERN = re.compile(r"^[A-Z]{2}[A-Z0-9]{10}$")
@@ -220,7 +226,7 @@ def integrate_depotmanager_db(
     for isin in sorted(known_isins):
         row = scalar_by_isin.setdefault(
             isin,
-            {"isin": isin, "name": "", "buy_date": "", "sell_date": "", "status": "", "notes": ""},
+            {"isin": isin, "name": "", "bank": "", "buy_date": "", "sell_date": "", "status": "", "notes": ""},
         )
         can_replace_example = not keep_example_rows and is_example_row(row)
         if names.get(isin) and (not row.get("name") or can_replace_example):
@@ -285,11 +291,13 @@ def write_manual_workbook(path: Path, sheets: dict[str, list[dict[str, str]]]) -
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
+    data_dir = configured_data_dir()
+    input_data_dir = configured_input_data_dir()
     parser = argparse.ArgumentParser(
-        description="Import _old/DepotManager_DB.xlsx data into FundTools/fund_manual_values.xlsx."
+        description="Import Data/_old/DepotManager_DB.xlsx data into Input_Data/fund_manual_values.xlsx."
     )
-    parser.add_argument("--old-workbook", type=Path, default=DEFAULT_OLD_WORKBOOK)
-    parser.add_argument("--manual-workbook", type=Path, default=DEFAULT_MANUAL_WORKBOOK)
+    parser.add_argument("--old-workbook", type=Path, default=data_dir / "_old" / "DepotManager_DB.xlsx")
+    parser.add_argument("--manual-workbook", type=Path, default=input_data_dir / "fund_manual_values.xlsx")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be imported without writing.")
     parser.add_argument("--no-backup", action="store_true", help="Do not create a timestamped .bak.xlsx file.")
     parser.add_argument(
@@ -306,6 +314,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_project_env()
     args = build_arg_parser().parse_args(argv)
     old_workbook = args.old_workbook.resolve()
     manual_workbook = args.manual_workbook.resolve()

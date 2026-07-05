@@ -85,6 +85,30 @@ def load_project_env() -> None:
         load_dotenv(env_path)
 
 
+def project_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
+def default_data_dir() -> Path:
+    return project_root() / "Data"
+
+
+def configured_data_dir() -> Path:
+    data_path = os.environ.get("DATA_PATH") or os.environ.get("DATA_DIR")
+    return Path(data_path).expanduser().resolve() if data_path else default_data_dir().resolve()
+
+
+def configured_input_data_dir() -> Path:
+    return configured_data_dir() / "Input_Data"
+
+
+def resolve_path(value: str | None, base_dir: Path) -> Path | None:
+    if not value:
+        return None
+    path = Path(value).expanduser()
+    return (path if path.is_absolute() else base_dir / path).resolve()
+
+
 @dataclass(frozen=True)
 class Fund:
     isin: str
@@ -371,6 +395,13 @@ def write_extended_fund_data(records: list[dict], path: Path) -> None:
     path.write_text(json.dumps(records, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def open_default_app(path: Path) -> None:
+    try:
+        os.startfile(path)  # type: ignore[attr-defined]
+    except OSError as exc:
+        print(f"Could not open {path}: {exc}", file=sys.stderr)
+
+
 def read_manual_fund_data(path: Path) -> ManualFundData:
     if not path.exists():
         return ManualFundData(scalars={}, date_values={})
@@ -552,7 +583,7 @@ def ensure_manual_data_template(path: Path, funds: list[Fund]) -> None:
 
     if path.exists():
         scalar_rows = rows_from_dicts(
-            ["isin", "name", "buy_date", "sell_date", "status", "notes"],
+            ["isin", "name", "bank", "buy_date", "sell_date", "status", "notes"],
             read_xlsx_rows(path, "ScalarValues"),
         )
         pair_rows = rows_from_dicts(
@@ -570,10 +601,10 @@ def ensure_manual_data_template(path: Path, funds: list[Fund]) -> None:
         return
 
     scalar_rows: list[list[object]] = [
-        ["isin", "name", "buy_date", "sell_date", "status", "notes"],
+        ["isin", "name", "bank", "buy_date", "sell_date", "status", "notes"],
     ]
     for fund in funds:
-        scalar_rows.append([fund.isin, fund.name, "", "", "", ""])
+        scalar_rows.append([fund.isin, fund.name, "", "", "", "", ""])
 
     pair_rows: list[list[object]] = [
         ["isin", "series", "date", "value", "notes"],
@@ -945,6 +976,41 @@ def format_month_year(date_value: str) -> str:
         return date_value
 
 
+def wrap_text(value: str, max_chars: int, max_lines: int) -> list[str]:
+    words = value.split()
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        next_line = f"{current} {word}".strip()
+        if current and len(next_line) > max_chars:
+            lines.append(current)
+            current = word
+            if len(lines) == max_lines - 1:
+                break
+        else:
+            current = next_line
+
+    remaining_words = words[sum(len(line.split()) for line in lines) :]
+    if remaining_words:
+        current = " ".join(remaining_words)
+    if current:
+        lines.append(current)
+
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+    if lines and len(lines[-1]) > max_chars:
+        lines[-1] = lines[-1][: max_chars - 1].rstrip() + "..."
+    return lines or [value]
+
+
+def svg_multiline_text(x: int, y: int, lines: list[str], class_name: str, line_height: int = 13) -> str:
+    tspans = [
+        f'<tspan x="{x}" dy="{0 if index == 0 else line_height}">{html.escape(line)}</tspan>'
+        for index, line in enumerate(lines)
+    ]
+    return f'<text x="{x}" y="{y}" class="{class_name}">{"".join(tspans)}</text>'
+
+
 def scaled_line_points(
     series: list[tuple[int, float]],
     quotes: list[Quote],
@@ -1019,6 +1085,8 @@ def svg_portfolio_pie_chart(
         )
 
     portfolio_total = sum(value for _fund, value in totals)
+    row_height = 34
+    height = max(height, 86 + len(totals) * row_height)
     cx, cy, radius = 180.0, 178.0, 118.0
     start_angle = -math.pi / 2
     slice_markup = []
@@ -1033,11 +1101,12 @@ def svg_portfolio_pie_chart(
             slice_markup.append(
                 f'<path d="{pie_slice_path(cx, cy, radius, start_angle, end_angle)}" fill="{color}"/>'
             )
-        label_y = 74 + index * 22
+        label_y = 74 + index * row_height
         label = fund.name or fund.isin
+        label_lines = wrap_text(label, max_chars=42, max_lines=2)
         legend_markup.append(
             f'<rect x="370" y="{label_y - 10}" width="12" height="12" fill="{color}"/>'
-            f'<text x="392" y="{label_y}" class="pie-legend">{html.escape(label)}</text>'
+            f'{svg_multiline_text(392, label_y, label_lines, "pie-legend")}'
             f'<text x="760" y="{label_y}" text-anchor="end" class="pie-legend">'
             f'{share * 100:.1f}%</text>'
             f'<text x="878" y="{label_y}" text-anchor="end" class="pie-legend">'
@@ -1710,9 +1779,38 @@ def svg_line_chart(
 """.strip()
 
 
+def html_scalar_values_table(rows: list[dict[str, str]]) -> str:
+    visible_rows = [row for row in rows if any(value.strip() for value in row.values())]
+    if not visible_rows:
+        return "<section><h2>Fund overview</h2><p>No ScalarValues rows found.</p></section>"
+
+    headers = list(visible_rows[0])
+    head_markup = "".join(f"<th>{html.escape(header)}</th>" for header in headers)
+    body_markup = []
+    for row in visible_rows:
+        body_markup.append(
+            "<tr>"
+            + "".join(f"<td>{html.escape(row.get(header, ''))}</td>" for header in headers)
+            + "</tr>"
+        )
+
+    return f"""
+<section>
+  <h2>Fund overview</h2>
+  <div class="table-wrap">
+    <table class="fund-overview">
+      <thead><tr>{head_markup}</tr></thead>
+      <tbody>{''.join(body_markup)}</tbody>
+    </table>
+  </div>
+</section>
+""".strip()
+
+
 def write_html_report(
     results: list[tuple[Fund, str | None, str | None, list[Quote], str | None]],
     path: Path,
+    scalar_rows: list[dict[str, str]],
     buy_dates: dict[str, str],
     quantity_histories: dict[str, list[QuantityPoint]],
     manual_date_values: dict[str, dict[str, list[DateValue]]],
@@ -1723,6 +1821,7 @@ def write_html_report(
         svg_portfolio_profit_bar_chart(results, quantity_histories, manual_date_values),
         svg_yearly_relative_profit_bar_chart(results, quantity_histories, manual_date_values),
         svg_portfolio_total_profit_chart(results, quantity_histories, manual_date_values),
+        html_scalar_values_table(scalar_rows),
     ]
     for fund, source, symbol, quotes, error in results:
         title = f"{fund.isin}"
@@ -1757,6 +1856,13 @@ def write_html_report(
     .meta {{ margin: 0 0 24px; color: #5d6673; }}
     section {{ margin: 0 0 22px; padding: 16px; background: #fff; border: 1px solid #dfe3e8; border-radius: 8px; }}
     h2 {{ margin: 0 0 10px; font-size: 16px; line-height: 1.35; }}
+    .table-wrap {{ overflow-x: auto; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 12px; }}
+    th, td {{ padding: 7px 9px; border-bottom: 1px solid #e4e8ee; text-align: left; vertical-align: top; }}
+    th {{ background: #f2f5f8; color: #384250; font-weight: 700; white-space: nowrap; }}
+    td {{ color: #384250; }}
+    .fund-overview td {{ min-width: 90px; }}
+    .fund-overview td:nth-child(2) {{ min-width: 220px; }}
     svg {{ width: 100%; height: auto; display: block; }}
     text {{ font-size: 12px; fill: #5d6673; }}
     .grid {{ stroke: #e4e8ee; stroke-width: 1; }}
@@ -1813,7 +1919,7 @@ def write_html_report(
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Fetch and plot fund value history per ISIN.")
-    parser.add_argument("--output-dir", default="../Data/fund_history", help="Directory for cache, report, and JSON files.")
+    parser.add_argument("--output-dir", default=None, help="Directory for cache, report, and JSON files.")
     parser.add_argument("--period", default="5y", help="Yahoo Finance range, for example 1y, 5y, 10y, max.")
     parser.add_argument("--interval", default="1d", help="Yahoo Finance interval, for example 1d, 1wk, 1mo.")
     parser.add_argument("--overrides", default=None, help="CSV with columns isin,symbol for manual Yahoo symbol mapping.")
@@ -1823,22 +1929,28 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None, manual_data_filename: str = "fund_manual_values.xlsx") -> int:
+def main(argv: list[str] | None = None) -> int:
     CACHE_STATS["cache_reads"] = 0
     CACHE_STATS["online_requests"] = 0
     args = build_arg_parser().parse_args(argv)
-    base_dir = Path(__file__).resolve().parent
-    output_dir = (base_dir / args.output_dir).resolve()
+    data_dir = configured_data_dir()
+    input_data_dir = configured_input_data_dir()
+    output_dir = (
+        resolve_path(args.output_dir, Path.cwd())
+        if args.output_dir
+        else (data_dir / "Web_Report").resolve()
+    )
     cache_dir = output_dir / "cache"
-    overrides_path = (base_dir / args.overrides).resolve() if args.overrides else None
+    overrides_path = resolve_path(args.overrides, input_data_dir)
     manual_data_path = (
-        (base_dir / args.manual_data).resolve()
+        resolve_path(args.manual_data, input_data_dir)
         if args.manual_data
-        else base_dir / manual_data_filename
+        else input_data_dir / "fund_manual_values.xlsx"
     )
 
     ensure_manual_data_template(manual_data_path, [])
     manual_data = read_manual_fund_data(manual_data_path)
+    scalar_rows = read_xlsx_rows(manual_data_path, "ScalarValues")
     funds = extract_funds_from_manual_data(manual_data)
     quantity_histories = extract_quantity_history_from_manual_data(manual_data)
     overrides = read_symbol_overrides(overrides_path) if overrides_path else {}
@@ -1847,6 +1959,7 @@ def main(argv: list[str] | None = None, manual_data_filename: str = "fund_manual
         print(f"Using {len(overrides)} symbol overrides from {overrides_path}.")
     else:
         print("Using 0 symbol overrides.")
+    print(f"Using input data directory {input_data_dir}.")
     print(f"Using manual fund data from {manual_data_path}.")
 
     report_results: list[tuple[Fund, str | None, str | None, list[Quote], str | None]] = []
@@ -1894,20 +2007,24 @@ def main(argv: list[str] | None = None, manual_data_filename: str = "fund_manual
         isin: parse_excel_date(scalars.get("buy_date", ""))
         for isin, scalars in manual_data.scalars.items()
     }
+    report_path = output_dir / "fund_history_report.html"
+    extended_data_path = output_dir / "extended_fund_data.json"
     write_html_report(
         report_results,
-        output_dir / "fund_history_report.html",
+        report_path,
+        scalar_rows,
         buy_dates,
         quantity_histories,
         manual_data.date_values,
     )
     write_extended_fund_data(
         build_extended_fund_records(funds, quantity_histories, extended_results, manual_data),
-        output_dir / "extended_fund_data.json",
+        extended_data_path,
     )
-    print(f"Wrote {output_dir / 'fund_history_report.html'}")
-    print(f"Wrote {output_dir / 'extended_fund_data.json'}")
+    print(f"Wrote {report_path}")
+    print(f"Wrote {extended_data_path}")
     print(f"Wrote/checked {manual_data_path}")
+    open_default_app(report_path)
     print(
         "Data cache: "
         f"{CACHE_STATS['cache_reads']} cached reads, "
@@ -1918,5 +2035,4 @@ def main(argv: list[str] | None = None, manual_data_filename: str = "fund_manual
 
 if __name__ == "__main__":
     load_project_env()
-    MANUAL_DATA_FILE = os.environ.get("MANUAL_DATA_FILE") or "fund_manual_values.xlsx"
-    raise SystemExit(main(manual_data_filename=MANUAL_DATA_FILE))
+    raise SystemExit(main())
