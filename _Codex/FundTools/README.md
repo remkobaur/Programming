@@ -19,18 +19,8 @@ python .\fund_history_tool.py
 Outputs are written to `Data\fund_history`:
 
 - `fund_history_report.html`: figure/report with one SVG plot per ISIN
-- `extended_fund_data.json`: extended per-ISIN structure with position dates, status, and value arrays
 - `FundTools\fund_manual_values.xlsx`: editable Excel template for scalar overrides and manual date/value pairs
 - `cache\`: cached Yahoo Finance symbol lookups and history responses
-
-`extended_fund_data.json` contains one object per ISIN:
-
-- `isin`, `name`, `buy_date`, `sell_date`, `sell_data`, `status`
-- `single_value`: downloaded date/value price history
-- `quantity`: quantity date pairs from `fund_manual_values.xlsx`
-- `total_value`: `single_value * latest known quantity`
-- `invest`: manual date/value pairs from `fund_manual_values.xlsx`
-- `dividend`: manual date/value pairs from `fund_manual_values.xlsx`
 
 `status`, `buy_date`, and `sell_date` come from the `ScalarValues` sheet when provided.
 

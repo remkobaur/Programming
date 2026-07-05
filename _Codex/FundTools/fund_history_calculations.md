@@ -1,7 +1,7 @@
 # Fund History Plot Calculations
 
 This document describes the values calculated by `fund_history_tool.py` for the
-HTML report plots and the exported `extended_fund_data.json`.
+HTML report plots.
 
 ## Notation
 
@@ -36,13 +36,6 @@ Q_t = latest quantity point Q_i where date_i <= t
 
 If no quantity exists for `t`, no total-value or profit point is plotted for
 that date.
-
-For the `extended_fund_data.json` export, the same rule is used, except a fund
-with a known sell date has quantity forced to zero after the sell date:
-
-```text
-Q_t = 0, if sell_date exists and t > sell_date
-```
 
 ## Cumulative Manual Values
 
@@ -246,41 +239,3 @@ year_profit = portfolio_profit_b - portfolio_profit_a
 
 Year boundary grid lines are drawn at the first plotted date of each new
 calendar year.
-
-## Extended Fund Data Export
-
-`extended_fund_data.json` is written as an output artifact. The HTML report
-does not read it back in.
-
-The exported `single_value` series is:
-
-```text
-single_value_t = q_t
-```
-
-unless a manual `single_value` series exists, in which case the manual series
-is exported instead.
-
-The exported `quantity` series is:
-
-```text
-quantity_t = manual quantity series, if present
-quantity_t = workbook quantity series, otherwise
-```
-
-The exported `total_value` series is:
-
-```text
-total_value_t = q_t * Q_t
-```
-
-unless a manual `total_value` series exists, in which case the manual series is
-exported instead.
-
-For exported calculated total value, quantity is zero after the inferred or
-manual sell date:
-
-```text
-Q_t = 0, if sell_date exists and t > sell_date
-total_value_t = q_t * Q_t
-```

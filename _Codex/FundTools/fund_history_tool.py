@@ -25,7 +25,6 @@ import urllib.request
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 from xml.etree import ElementTree as ET
 
 
@@ -280,29 +279,6 @@ def extract_quantity_history_from_manual_data(manual_data: ManualFundData) -> di
     return histories
 
 
-def date_values(points: Iterable[DateValue]) -> list[dict[str, float | str]]:
-    return [{"date": point.date, "value": point.value} for point in points]
-
-
-def quote_values(quotes: Iterable[Quote]) -> list[dict[str, float | str]]:
-    return [{"date": quote.date, "value": quote.close} for quote in quotes]
-
-
-def quantity_values(points: Iterable[QuantityPoint]) -> list[dict[str, float | str]]:
-    return [{"date": point.date, "value": point.quantity} for point in points]
-
-
-def quantity_at(date: str, points: list[QuantityPoint], sold_after: str | None) -> float:
-    if sold_after is not None and date > sold_after:
-        return 0.0
-    quantity = 0.0
-    for point in points:
-        if point.date > date:
-            break
-        quantity = point.quantity
-    return quantity
-
-
 def quote_at_or_after(date: str, quotes: list[Quote], max_days_after: int = 14) -> Quote | None:
     try:
         target_date = dt.date.fromisoformat(date)
@@ -318,81 +294,6 @@ def quote_at_or_after(date: str, quotes: list[Quote], max_days_after: int = 14) 
                 return quote
             return None
     return None
-
-
-def build_total_value_history(
-    quotes: list[Quote],
-    quantity_points: list[QuantityPoint],
-    sold_after: str | None,
-) -> list[DateValue]:
-    totals: list[DateValue] = []
-    for quote in quotes:
-        quantity = quantity_at(quote.date, quantity_points, sold_after)
-        totals.append(DateValue(date=quote.date, value=quote.close * quantity))
-    return totals
-
-
-def build_extended_fund_records(
-    funds: list[Fund],
-    quantity_histories: dict[str, list[QuantityPoint]],
-    results: dict[str, HistoryResult],
-    manual_data: ManualFundData,
-) -> list[dict]:
-    latest_workbook_date = max(
-        (point.date for points in quantity_histories.values() for point in points),
-        default=None,
-    )
-    records: list[dict] = []
-    for fund in funds:
-        quantity_points = quantity_histories.get(fund.isin, [])
-        first_date = quantity_points[0].date if quantity_points else None
-        last_date = quantity_points[-1].date if quantity_points else None
-        is_sold = bool(latest_workbook_date and last_date and last_date < latest_workbook_date)
-        sell_date = last_date if is_sold else None
-        result = results.get(fund.isin)
-        quotes = result.quotes if result else []
-        manual_scalars = manual_data.scalars.get(fund.isin, {})
-        manual_series = manual_data.date_values.get(fund.isin, {})
-        output_name = manual_scalars.get("name") or fund.name
-        output_buy_date = parse_excel_date(manual_scalars.get("buy_date", "")) or first_date
-        output_sell_date = parse_excel_date(manual_scalars.get("sell_date", "")) or sell_date
-        output_status = manual_scalars.get("status") or ("sold" if is_sold else "active")
-        single_value = manual_series.get("single_value")
-        quantity = manual_series.get("quantity")
-        selected_quantity_points = (
-            [QuantityPoint(point.date, point.value) for point in quantity]
-            if quantity is not None
-            else quantity_points
-        )
-        total_value = build_total_value_history(quotes, selected_quantity_points, output_sell_date)
-        manual_total_value = manual_series.get("total_value")
-        records.append(
-            {
-                "isin": fund.isin,
-                "name": output_name,
-                "buy_date": output_buy_date,
-                "sell_date": output_sell_date,
-                "sell_data": output_sell_date,
-                "status": output_status,
-                "source": result.source if result else None,
-                "symbol": result.symbol if result else None,
-                "single_value": date_values(single_value) if single_value is not None else quote_values(quotes),
-                "quantity": date_values(quantity) if quantity is not None else quantity_values(quantity_points),
-                "total_value": (
-                    date_values(manual_total_value)
-                    if manual_total_value is not None
-                    else date_values(total_value)
-                ),
-                "invest": date_values(manual_series.get("invest", [])),
-                "dividend": date_values(manual_series.get("dividend", [])),
-            }
-        )
-    return records
-
-
-def write_extended_fund_data(records: list[dict], path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(records, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def open_default_app(path: Path) -> None:
@@ -1970,7 +1871,7 @@ def write_html_report(
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Fetch and plot fund value history per ISIN.")
-    parser.add_argument("--output-dir", default=None, help="Directory for cache, report, and JSON files.")
+    parser.add_argument("--output-dir", default=None, help="Directory for cache and report files.")
     parser.add_argument("--period", default="5y", help="Yahoo Finance range, for example 1y, 5y, 10y, max.")
     parser.add_argument("--interval", default="1d", help="Yahoo Finance interval, for example 1d, 1wk, 1mo.")
     parser.add_argument("--overrides", default=None, help="CSV with columns isin,symbol for manual Yahoo symbol mapping.")
@@ -2014,7 +1915,6 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Using manual fund data from {manual_data_path}.")
 
     report_results: list[tuple[Fund, str | None, str | None, list[Quote], str | None]] = []
-    extended_results: dict[str, HistoryResult] = {}
 
     for fund in funds:
         try:
@@ -2047,7 +1947,6 @@ def main(argv: list[str] | None = None) -> int:
             if len(result.quotes) == 1:
                 error = "Only one current value found; no historical series available from configured sources."
             report_results.append((fund, result.source, result.symbol, result.quotes, error))
-            extended_results[fund.isin] = result
             print(f"{fund.isin}: {result.source} {result.symbol}, {len(result.quotes)} points")
         except (urllib.error.URLError, TimeoutError, ValueError, KeyError, json.JSONDecodeError) as exc:
             message = f"Failed to fetch data: {exc}"
@@ -2059,7 +1958,6 @@ def main(argv: list[str] | None = None) -> int:
         for isin, scalars in manual_data.scalars.items()
     }
     report_path = output_dir / "fund_history_report.html"
-    extended_data_path = output_dir / "extended_fund_data.json"
     write_html_report(
         report_results,
         report_path,
@@ -2068,12 +1966,7 @@ def main(argv: list[str] | None = None) -> int:
         quantity_histories,
         manual_data.date_values,
     )
-    write_extended_fund_data(
-        build_extended_fund_records(funds, quantity_histories, extended_results, manual_data),
-        extended_data_path,
-    )
     print(f"Wrote {report_path}")
-    print(f"Wrote {extended_data_path}")
     print(f"Wrote/checked {manual_data_path}")
     open_default_app(report_path)
     print(
