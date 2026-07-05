@@ -1,8 +1,2 @@
-Matlab/UKF-Scaling-ParameterVariation.dat
-Matlab/UKF-Scaling-ParameterVariation.tex
-
 *.pyc
-Python/PDF/Dissertation.log
-Data
-*.xlsx
-!fund_manual_values.xlsx
+__pycache__
