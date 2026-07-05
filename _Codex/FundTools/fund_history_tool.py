@@ -1622,6 +1622,7 @@ def svg_line_chart(
     total_markup = ""
     total_series: list[tuple[int, float]] = []
     total_by_index: dict[int, float] = {}
+    series = manual_series or {}
     for index, quote in enumerate(quotes):
         quantity = defined_quantity_at(quote.date, quantity_points or [])
         if quantity is None:
@@ -1649,6 +1650,52 @@ def svg_line_chart(
         def subplot_y(value: float) -> float:
             return pad_top + plot_h - (value - total_min) * plot_h / (total_max - total_min)
 
+        dividends = [
+            (buy_quote_index(quotes, point.date), point)
+            for point in series.get("dividend", [])
+            if quotes[0].date <= point.date <= quotes[-1].date
+        ]
+        dividend_events = [
+            (index, point.date, point.value)
+            for index, point in dividends
+            if index is not None
+        ]
+        dividend_markup = ""
+        if dividend_events:
+            dividend_values = [value for _index, _date, value in dividend_events] + [0.0]
+            dividend_min, dividend_max = min(dividend_values), max(dividend_values)
+            if math.isclose(dividend_min, dividend_max):
+                dividend_min, dividend_max = -1.0, 1.0
+
+            def dividend_y(value: float) -> float:
+                return pad_top + plot_h - (value - dividend_min) * plot_h / (dividend_max - dividend_min)
+
+            dividend_ticks = [dividend_min + (dividend_max - dividend_min) * i / 4 for i in range(5)]
+            dividend_tick_markup = []
+            for tick in dividend_ticks:
+                y = dividend_y(tick)
+                dividend_tick_markup.append(
+                    f'<text x="{total_right + 8}" y="{y + 4:.1f}" text-anchor="start" class="dividend-axis">{tick:.0f}</text>'
+                )
+
+            zero_y = dividend_y(0.0)
+            stem_markup = []
+            for index, date, value in dividend_events:
+                x = subplot_x(index)
+                y = dividend_y(value)
+                stem_markup.append(
+                    f'<line x1="{x:.1f}" y1="{zero_y:.1f}" x2="{x:.1f}" y2="{y:.1f}" class="dividend-stem">'
+                    f'<title>dividend {html.escape(date)}: {value:.2f}</title></line>'
+                    f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" class="dividend-point"/>'
+                )
+
+            dividend_markup = (
+                f'<text x="{total_right}" y="{pad_top - 6}" text-anchor="end" class="dividend-axis">dividend</text>'
+                f'{"".join(dividend_tick_markup)}'
+                f'<line x1="{subplot_left}" y1="{zero_y:.1f}" x2="{total_right}" y2="{zero_y:.1f}" class="dividend-zero-line"/>'
+                f'{"".join(stem_markup)}'
+            )
+
         total_points = " ".join(
             f"{subplot_x(index):.1f},{subplot_y(value):.1f}"
             for index, value in total_series
@@ -1659,20 +1706,20 @@ def svg_line_chart(
             y = subplot_y(tick)
             total_tick_markup.append(
                 f'<line x1="{subplot_left}" y1="{y:.1f}" x2="{total_right}" y2="{y:.1f}" class="grid"/>'
-                f'<text x="{total_right + 8}" y="{y + 4:.1f}" text-anchor="start" class="total-axis">{tick:.0f}</text>'
+                f'<text x="{subplot_left - 8}" y="{y + 4:.1f}" text-anchor="end" class="total-axis">{tick:.0f}</text>'
             )
         total_markup = (
             f'<text x="{subplot_left}" y="{pad_top - 6}" class="total-axis">total value</text>'
             f'<line x1="{subplot_left}" y1="{pad_top}" x2="{subplot_left}" y2="{height - pad_bottom}" class="relative-axis-line"/>'
             f'<line x1="{total_right}" y1="{pad_top}" x2="{total_right}" y2="{height - pad_bottom}" class="relative-axis-line"/>'
             f'{"".join(total_tick_markup)}'
+            f'{dividend_markup}'
             f'<polyline points="{total_points}" fill="none" class="total-line"/>'
             f'{x_tick_labels(subplot_x)}'
         )
 
     profit_markup = ""
     if total_by_index:
-        series = manual_series or {}
         invests = series.get("invest", [])
         dividends = series.get("dividend", [])
         sells = series.get("sell", [])
@@ -1876,6 +1923,10 @@ def write_html_report(
     .relative-axis {{ font-size: 12px; fill: #6c737d; }}
     .total-axis {{ font-size: 12px; fill: #4f5965; }}
     .total-line {{ stroke: #2f8f83; stroke-width: 2; }}
+    .dividend-axis {{ font-size: 12px; fill: #9a5a7d; }}
+    .dividend-stem {{ stroke: #9a5a7d; stroke-width: 1.8; }}
+    .dividend-point {{ fill: #9a5a7d; }}
+    .dividend-zero-line {{ stroke: #d8c8d2; stroke-width: 1; stroke-dasharray: 3 4; }}
     .profit-axis {{ font-size: 12px; fill: #5b4b73; }}
     .profit-relative-axis {{ font-size: 12px; fill: #8b5d33; }}
     .profit-line {{ stroke: #6f5aa8; stroke-width: 2; }}

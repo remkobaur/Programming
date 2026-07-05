@@ -91,7 +91,9 @@ The middle panel of each fund chart plots total value:
 V_t = q_t * Q_t
 ```
 
-Only dates with a defined quantity are plotted.
+Only dates with a defined quantity are plotted. Dividend date/value pairs in
+the visible date range are overlaid as stems on the same panel, scaled against
+their own right-hand axis; the total-value axis is on the left.
 
 ## Single Fund Profit Plot
 
