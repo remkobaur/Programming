@@ -1237,9 +1237,12 @@ def svg_portfolio_total_profit_chart(
         rect_y = min(value_y, zero_y)
         rect_h = max(1.0, abs(zero_y - value_y))
         css_class = "portfolio-profit-bar-positive" if value >= 0 else "portfolio-profit-bar-negative"
+        label_y = rect_y - 6 if value >= 0 else rect_y + rect_h + 14
+        label_y = min(max(label_y, top + 12), top + plot_h - 4)
         annual_bar_markup.append(
             f'<rect x="{center_x - bar_w / 2:.1f}" y="{rect_y:.1f}" width="{bar_w:.1f}" height="{rect_h:.1f}" '
             f'class="{css_class}"><title>{year}: {value:,.0f}</title></rect>'
+            f'<text x="{center_x:.1f}" y="{label_y:.1f}" text-anchor="middle" class="bar-value">{value:+,.0f}</text>'
         )
 
     x_tick_markup = []
