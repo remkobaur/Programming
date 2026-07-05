@@ -61,6 +61,11 @@ CACHE_STATS = {
     "online_requests": 0,
 }
 
+DEFAULT_SYMBOL_OVERRIDES = {
+    # Yahoo search often returns the London listing first; the depot values are EUR.
+    "IE00B6R52259": "IUSQ.DE",
+}
+
 
 def load_dotenv(path: Path) -> None:
     if not path.exists():
@@ -609,6 +614,26 @@ def read_symbol_overrides(path: Path) -> dict[str, str]:
         return overrides
 
 
+def yahoo_symbol_score(isin: str, quote: dict) -> tuple[int, str]:
+    symbol = str(quote.get("symbol") or "")
+    symbol_upper = symbol.upper()
+    fields = " ".join(str(quote.get(key, "")) for key in ("symbol", "shortname", "longname")).upper()
+    score = 0
+    if isin in fields:
+        score += 100
+    if quote.get("quoteType") in {"MUTUALFUND", "ETF", "EQUITY"}:
+        score += 10
+    if symbol_upper.endswith(".DE"):
+        score += 40
+    elif symbol_upper.endswith(".F"):
+        score += 35
+    elif symbol_upper.endswith((".BE", ".DU", ".HA", ".HM", ".MU", ".SG")):
+        score += 25
+    elif symbol_upper.endswith(".L"):
+        score -= 25
+    return score, symbol
+
+
 def resolve_yahoo_symbol(
     isin: str,
     cache_dir: Path,
@@ -617,6 +642,8 @@ def resolve_yahoo_symbol(
 ) -> str | None:
     if isin in overrides:
         return overrides[isin]
+    if isin in DEFAULT_SYMBOL_OVERRIDES:
+        return DEFAULT_SYMBOL_OVERRIDES[isin]
 
     cache_file = cache_dir / "isin_symbol_cache.json"
     cache: dict[str, str | None] = {}
@@ -631,17 +658,8 @@ def resolve_yahoo_symbol(
     CACHE_STATS["online_requests"] += 1
     data = http_get_json(url)
     quotes = data.get("quotes", [])
-    symbol = None
-    for quote in quotes:
-        symbol_candidate = quote.get("symbol")
-        if not symbol_candidate:
-            continue
-        fields = " ".join(str(quote.get(key, "")) for key in ("symbol", "shortname", "longname"))
-        if isin in fields.upper() or quote.get("quoteType") in {"MUTUALFUND", "ETF", "EQUITY"}:
-            symbol = symbol_candidate
-            break
-    if symbol is None and quotes:
-        symbol = quotes[0].get("symbol")
+    candidates = [quote for quote in quotes if quote.get("symbol")]
+    symbol = max(candidates, key=lambda quote: yahoo_symbol_score(isin, quote)).get("symbol") if candidates else None
 
     cache[isin] = symbol
     cache_file.parent.mkdir(parents=True, exist_ok=True)
@@ -649,7 +667,7 @@ def resolve_yahoo_symbol(
     return symbol
 
 
-def download_history(symbol: str, cache_dir: Path, period: str, interval: str, refresh: bool = False) -> list[Quote]:
+def download_yahoo_chart_data(symbol: str, cache_dir: Path, period: str, interval: str, refresh: bool = False) -> dict:
     safe_symbol = re.sub(r"[^A-Za-z0-9_.=-]", "_", symbol)
     cache_file = cache_dir / "history" / f"{safe_symbol}_{period}_{interval}.json"
     data = read_json_cache(cache_file, refresh)
@@ -658,11 +676,15 @@ def download_history(symbol: str, cache_dir: Path, period: str, interval: str, r
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(symbol)}?{params}"
         data = http_get_json(url)
         write_json_cache(cache_file, data)
+    return data
 
+
+def yahoo_history_from_chart_data(data: dict) -> tuple[list[Quote], str | None]:
     result = data.get("chart", {}).get("result") or []
     if not result:
-        return []
+        return [], None
     item = result[0]
+    currency = (item.get("meta") or {}).get("currency")
     timestamps = item.get("timestamp") or []
     quote = ((item.get("indicators") or {}).get("quote") or [{}])[0]
     closes = quote.get("close") or []
@@ -673,7 +695,55 @@ def download_history(symbol: str, cache_dir: Path, period: str, interval: str, r
             continue
         date = dt.datetime.fromtimestamp(timestamp, tz=dt.UTC).date().isoformat()
         history.append(Quote(date=date, close=float(close)))
-    return history
+    return history, currency
+
+
+def normalized_yahoo_currency(currency: str | None) -> tuple[str | None, float]:
+    if not currency:
+        return None, 1.0
+    raw_currency = currency.strip()
+    normalized = raw_currency.upper()
+    if raw_currency in {"GBp", "GBX"} or normalized == "GBX":
+        return "GBP", 0.01
+    if normalized in {"GBP", "GBP=X"}:
+        return "GBP", 1.0
+    return normalized, 1.0
+
+
+def convert_quotes_to_eur(
+    quotes: list[Quote],
+    currency: str | None,
+    cache_dir: Path,
+    period: str,
+    interval: str,
+    refresh: bool = False,
+) -> list[Quote]:
+    normalized_currency, unit_factor = normalized_yahoo_currency(currency)
+    if normalized_currency in {None, "EUR"}:
+        return [
+            Quote(date=quote.date, close=quote.close * unit_factor)
+            for quote in quotes
+        ]
+
+    fx_symbol = f"{normalized_currency}EUR=X"
+    fx_data = download_yahoo_chart_data(fx_symbol, cache_dir, period, interval, refresh)
+    fx_quotes, _fx_currency = yahoo_history_from_chart_data(fx_data)
+    if not fx_quotes:
+        raise ValueError(f"No EUR exchange-rate history found for {normalized_currency}.")
+
+    converted: list[Quote] = []
+    for quote in quotes:
+        fx_quote = quote_at_or_before(quote.date, fx_quotes)
+        if fx_quote is None:
+            continue
+        converted.append(Quote(date=quote.date, close=quote.close * unit_factor * fx_quote.close))
+    return converted
+
+
+def download_history(symbol: str, cache_dir: Path, period: str, interval: str, refresh: bool = False) -> list[Quote]:
+    data = download_yahoo_chart_data(symbol, cache_dir, period, interval, refresh)
+    history, currency = yahoo_history_from_chart_data(data)
+    return convert_quotes_to_eur(history, currency, cache_dir, period, interval, refresh)
 
 
 def search_onvista_instrument(isin: str, cache_dir: Path, refresh: bool = False) -> dict | None:
@@ -731,14 +801,13 @@ def download_onvista_history(isin: str, cache_dir: Path, period: str, refresh: b
     market = quote.get("market") or snapshot.get("chart") or {}
     id_notation = market.get("idNotation") or snapshot.get("chart", {}).get("idNotation")
     code_market = market.get("codeMarket") or snapshot.get("chart", {}).get("codeMarket")
-    iso_currency = quote.get("isoCurrency") or snapshot.get("chart", {}).get("isoCurrency") or "EUR"
     entity_value = instrument["entityValue"]
 
     params = {
         "range": onvista_range_from_period(period),
         "idNotation": id_notation,
         "codeMarket": code_market,
-        "isoCurrency": iso_currency,
+        "isoCurrency": "EUR",
         "withEarnings": "false",
     }
     params = {key: value for key, value in params.items() if value is not None}
@@ -807,36 +876,40 @@ def download_deka_current_value(isin: str, cache_dir: Path, refresh: bool = Fals
     )
 
 
-def buy_marker_markup(
+def event_marker_markup(
     quotes: list[Quote],
-    buy_date: str,
-    buy_quote_index: int,
+    event_date: str,
+    event_index: int,
+    label: str,
+    css_prefix: str,
     x_at,
     y_at,
     width: int,
     pad_left: int,
     pad_right: int,
+    label_offset_y: float,
 ) -> str:
-    quote = quotes[buy_quote_index]
-    x = x_at(buy_quote_index)
+    quote = quotes[event_index]
+    x = x_at(event_index)
     y = y_at(quote.close)
     return (
-        f'<line x1="{pad_left}" y1="{y:.1f}" x2="{width - pad_right}" y2="{y:.1f}" class="buy-line"/>'
-        f'<line x1="{x:.1f}" y1="{y - 10:.1f}" x2="{x:.1f}" y2="{y + 10:.1f}" class="buy-marker-line"/>'
-        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="5" class="buy-point"/>'
-        f'<text x="{x + 8:.1f}" y="{y - 8:.1f}" class="buy-label">buy {html.escape(buy_date)}</text>'
+        f'<line x1="{pad_left}" y1="{y:.1f}" x2="{width - pad_right}" y2="{y:.1f}" class="{css_prefix}-line"/>'
+        f'<line x1="{x:.1f}" y1="{y - 10:.1f}" x2="{x:.1f}" y2="{y + 10:.1f}" class="{css_prefix}-marker-line"/>'
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="5" class="{css_prefix}-point"/>'
+        f'<text x="{x + 8:.1f}" y="{y + label_offset_y:.1f}" class="{css_prefix}-label">'
+        f'{html.escape(label)} {html.escape(event_date)}</text>'
     )
 
 
-def buy_quote_index(quotes: list[Quote], buy_date: str | None) -> int | None:
-    if not buy_date:
+def event_quote_index(quotes: list[Quote], event_date: str | None) -> int | None:
+    if not event_date:
         return None
     try:
-        dt.date.fromisoformat(buy_date)
+        dt.date.fromisoformat(event_date)
     except ValueError:
         return None
     for index, quote in enumerate(quotes):
-        if quote.date >= buy_date:
+        if quote.date >= event_date:
             return index
     return None
 
@@ -873,6 +946,13 @@ def cumulative_value_between(start_date: str, end_date: str, values: list[DateVa
 def format_month_year(date_value: str) -> str:
     try:
         return dt.date.fromisoformat(date_value).strftime("%m/%Y")
+    except ValueError:
+        return date_value
+
+
+def format_year(date_value: str) -> str:
+    try:
+        return str(dt.date.fromisoformat(date_value).year)
     except ValueError:
         return date_value
 
@@ -1162,17 +1242,11 @@ def svg_portfolio_total_profit_chart(
             f'class="{css_class}"><title>{year}: {value:,.0f}</title></rect>'
         )
 
-    x_tick_indices = sorted({round((len(series) - 1) * index / 3) for index in range(4)})
     x_tick_markup = []
-    for index in x_tick_indices:
-        anchor = "middle"
-        if index == 0:
-            anchor = "start"
-        elif index == len(series) - 1:
-            anchor = "end"
+    for year, start_index, end_index, _value in annual_values:
+        x = (x_at(start_index) + x_at(end_index)) / 2
         x_tick_markup.append(
-            f'<text x="{x_at(index):.1f}" y="{height - 10}" text-anchor="{anchor}" class="bar-axis">'
-            f'{html.escape(format_month_year(series[index].date))}</text>'
+            f'<text x="{x:.1f}" y="{height - 10}" text-anchor="middle" class="bar-axis">{year}</text>'
         )
 
     latest = series[-1]
@@ -1435,6 +1509,7 @@ def svg_line_chart(
     title: str,
     quotes: list[Quote],
     buy_date: str | None = None,
+    sell_date: str | None = None,
     quantity_points: list[QuantityPoint] | None = None,
     manual_series: dict[str, list[DateValue]] | None = None,
     width: int = 1700,
@@ -1493,7 +1568,8 @@ def svg_line_chart(
 
     x_tick_markup = x_tick_labels(x_at)
     y_ticks = [min_y + (max_y - min_y) * i / 4 for i in range(5)]
-    buy_index = buy_quote_index(quotes, buy_date)
+    buy_index = event_quote_index(quotes, buy_date)
+    sell_index = event_quote_index(quotes, sell_date)
     buy_value = quotes[buy_index].close if buy_index is not None else None
     tick_markup = []
     for tick in y_ticks:
@@ -1511,14 +1587,20 @@ def svg_line_chart(
             f'{right_axis_label}'
         )
     axis_markup = ""
-    buy_markup = ""
+    event_markup = ""
     if buy_index is not None and buy_date:
         axis_markup = (
             f'<line x1="{main_right}" y1="{pad_top}" '
             f'x2="{main_right}" y2="{height - pad_bottom}" class="relative-axis-line"/>'
             f'<text x="{relative_label_x}" y="{pad_top - 6}" class="relative-axis">vs buy</text>'
         )
-        buy_markup = buy_marker_markup(quotes, buy_date, buy_index, x_at, y_at, main_right, main_left, 0)
+        event_markup += event_marker_markup(
+            quotes, buy_date, buy_index, "buy", "buy", x_at, y_at, main_right, main_left, 0, -8
+        )
+    if sell_index is not None and sell_date:
+        event_markup += event_marker_markup(
+            quotes, sell_date, sell_index, "sell", "sell", x_at, y_at, main_right, main_left, 0, 18
+        )
 
     total_markup = ""
     total_series: list[tuple[int, float]] = []
@@ -1552,7 +1634,7 @@ def svg_line_chart(
             return pad_top + plot_h - (value - total_min) * plot_h / (total_max - total_min)
 
         dividends = [
-            (buy_quote_index(quotes, point.date), point)
+            (event_quote_index(quotes, point.date), point)
             for point in series.get("dividend", [])
             if quotes[0].date <= point.date <= quotes[-1].date
         ]
@@ -1715,7 +1797,7 @@ def svg_line_chart(
   <svg viewBox="0 0 {width} {height}" role="img" aria-label="{html.escape(title)}">
     {''.join(tick_markup)}
     {axis_markup}
-    {buy_markup}
+    {event_markup}
     <polyline points="{points}" fill="none" class="line"/>
     <circle cx="{x_at(0):.1f}" cy="{y_at(first.close):.1f}" r="3" class="point"/>
     <circle cx="{x_at(len(quotes) - 1):.1f}" cy="{y_at(last.close):.1f}" r="3" class="point"/>
@@ -1755,11 +1837,58 @@ def html_scalar_values_table(rows: list[dict[str, str]]) -> str:
 """.strip()
 
 
+def has_valid_iso_date(value: str | None) -> bool:
+    if not value:
+        return False
+    try:
+        dt.date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
+def is_sold_fund(isin: str, statuses: dict[str, str], sell_dates: dict[str, str]) -> bool:
+    status = statuses.get(isin, "").strip().lower()
+    return status == "sold" or has_valid_iso_date(sell_dates.get(isin))
+
+
+def fund_chart_markup(
+    fund: Fund,
+    source: str | None,
+    symbol: str | None,
+    quotes: list[Quote],
+    error: str | None,
+    buy_dates: dict[str, str],
+    sell_dates: dict[str, str],
+    quantity_histories: dict[str, list[QuantityPoint]],
+    manual_date_values: dict[str, dict[str, list[DateValue]]],
+) -> str:
+    title = f"{fund.isin}"
+    if source:
+        title += f" / {source}"
+    if symbol:
+        title += f" / {symbol}"
+    if fund.name:
+        title += f" - {fund.name}"
+    if error:
+        return f"<section><h2>{html.escape(title)}</h2><p>{html.escape(error)}</p></section>"
+    return svg_line_chart(
+        title,
+        quotes,
+        buy_dates.get(fund.isin),
+        sell_dates.get(fund.isin),
+        quantity_histories.get(fund.isin, []),
+        manual_date_values.get(fund.isin, {}),
+    )
+
+
 def write_html_report(
     results: list[tuple[Fund, str | None, str | None, list[Quote], str | None]],
     path: Path,
     scalar_rows: list[dict[str, str]],
     buy_dates: dict[str, str],
+    sell_dates: dict[str, str],
+    statuses: dict[str, str],
     quantity_histories: dict[str, list[QuantityPoint]],
     manual_date_values: dict[str, dict[str, list[DateValue]]],
 ) -> None:
@@ -1771,24 +1900,31 @@ def write_html_report(
         svg_portfolio_total_profit_chart(results, quantity_histories, manual_date_values),
         html_scalar_values_table(scalar_rows),
     ]
-    for fund, source, symbol, quotes, error in results:
-        title = f"{fund.isin}"
-        if source:
-            title += f" / {source}"
-        if symbol:
-            title += f" / {symbol}"
-        if fund.name:
-            title += f" - {fund.name}"
-        if error:
-            charts.append(f"<section><h2>{html.escape(title)}</h2><p>{html.escape(error)}</p></section>")
-        else:
+
+    active_results = [
+        result for result in results
+        if not is_sold_fund(result[0].isin, statuses, sell_dates)
+    ]
+    sold_results = [
+        result for result in results
+        if is_sold_fund(result[0].isin, statuses, sell_dates)
+    ]
+    for section_title, section_results in (("Active funds", active_results), ("Sold funds", sold_results)):
+        if not section_results:
+            continue
+        charts.append(f'<section class="fund-section"><h2>{html.escape(section_title)}</h2></section>')
+        for fund, source, symbol, quotes, error in section_results:
             charts.append(
-                svg_line_chart(
-                    title,
+                fund_chart_markup(
+                    fund,
+                    source,
+                    symbol,
                     quotes,
-                    buy_dates.get(fund.isin),
-                    quantity_histories.get(fund.isin, []),
-                    manual_date_values.get(fund.isin, {}),
+                    error,
+                    buy_dates,
+                    sell_dates,
+                    quantity_histories,
+                    manual_date_values,
                 )
             )
 
@@ -1803,6 +1939,8 @@ def write_html_report(
     h1 {{ margin: 0 0 4px; font-size: 28px; }}
     .meta {{ margin: 0 0 24px; color: #5d6673; }}
     section {{ margin: 0 0 22px; padding: 16px; background: #fff; border: 1px solid #dfe3e8; border-radius: 8px; }}
+    .fund-section {{ padding: 10px 16px; background: #eef2f6; }}
+    .fund-section h2 {{ margin: 0; font-size: 18px; }}
     h2 {{ margin: 0 0 10px; font-size: 16px; line-height: 1.35; }}
     .table-wrap {{ overflow-x: auto; }}
     table {{ width: 100%; border-collapse: collapse; font-size: 12px; }}
@@ -1820,6 +1958,10 @@ def write_html_report(
     .buy-marker-line {{ stroke: #6c737d; stroke-width: 1.4; }}
     .buy-point {{ fill: #fff; stroke: #333942; stroke-width: 2; }}
     .buy-label {{ font-size: 12px; fill: #333942; }}
+    .sell-line {{ stroke: #d5a4aa; stroke-width: 1.2; stroke-dasharray: 5 5; }}
+    .sell-marker-line {{ stroke: #b54b5a; stroke-width: 1.4; }}
+    .sell-point {{ fill: #fff; stroke: #b54b5a; stroke-width: 2; }}
+    .sell-label {{ font-size: 12px; fill: #8f3441; }}
     .relative-axis-line {{ stroke: #c4c9d0; stroke-width: 1; }}
     .relative-axis {{ font-size: 12px; fill: #6c737d; }}
     .total-axis {{ font-size: 12px; fill: #4f5965; }}
@@ -1957,12 +2099,22 @@ def main(argv: list[str] | None = None) -> int:
         isin: parse_excel_date(scalars.get("buy_date", ""))
         for isin, scalars in manual_data.scalars.items()
     }
+    sell_dates = {
+        isin: parse_excel_date(scalars.get("sell_date", ""))
+        for isin, scalars in manual_data.scalars.items()
+    }
+    statuses = {
+        isin: scalars.get("status", "")
+        for isin, scalars in manual_data.scalars.items()
+    }
     report_path = output_dir / "fund_history_report.html"
     write_html_report(
         report_results,
         report_path,
         scalar_rows,
         buy_dates,
+        sell_dates,
+        statuses,
         quantity_histories,
         manual_data.date_values,
     )

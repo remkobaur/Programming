@@ -8,6 +8,8 @@ Provider order:
 2. Onvista ISIN search and `simple_chart_history` fallback
 3. Deka fund search current value fallback
 
+Downloaded online values are normalized to EUR before they are plotted.
+
 ## Run
 
 From `FundTools`:

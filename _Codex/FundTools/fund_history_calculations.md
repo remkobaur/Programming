@@ -25,6 +25,11 @@ Manual date/value series come from the workbook:
 
 Dates are compared as ISO dates (`YYYY-MM-DD`).
 
+Downloaded quote values are normalized to EUR before report calculations. Yahoo
+values whose chart metadata reports another currency are converted with Yahoo's
+matching exchange-rate history; GBp/GBX values are first converted from pence
+to GBP. Onvista chart requests ask for EUR values directly.
+
 ## Quantity At A Date
 
 For report plots, the active quantity is the latest quantity entry with a date
