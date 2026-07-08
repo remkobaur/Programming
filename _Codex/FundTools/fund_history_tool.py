@@ -1,27 +1,21 @@
 #!/usr/bin/env python3
-"""Download and plot fund history for ISINs from an Excel workbook.
+"""Plot fund history for ISINs from an Excel workbook.
 
 The tool intentionally uses only Python's standard library so it can run in a
-minimal environment. It reads .xlsx files directly, resolves ISINs through
-Yahoo Finance search, downloads chart data, caches results, and writes an HTML
-report with inline SVG plots.
+minimal environment. It reads .xlsx files directly and writes an HTML report
+with inline SVG plots. Online values are read from the OnlineValues worksheet;
+update that sheet with fund_online_values.py.
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
 import datetime as dt
 import html
-import json
 import math
 import os
 import re
 import sys
-import time
-import urllib.error
-import urllib.parse
-import urllib.request
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,15 +50,8 @@ FUND_COLORS = [
     "#7f7f7f",
 ]
 
-CACHE_STATS = {
-    "cache_reads": 0,
-    "online_requests": 0,
-}
-
-DEFAULT_SYMBOL_OVERRIDES = {
-    # Yahoo search often returns the London listing first; the depot values are EUR.
-    "IE00B6R52259": "IUSQ.DE",
-}
+ONLINE_VALUES_SHEET = "OnlineValues"
+ONLINE_VALUES_HEADERS = ["isin", "source", "symbol", "date", "close", "error", "updated_at"]
 
 
 def load_dotenv(path: Path) -> None:
@@ -484,10 +471,12 @@ def quantity_template_rows(funds: list[Fund]) -> list[list[object]]:
 
 
 def ensure_manual_data_template(path: Path, funds: list[Fund]) -> None:
-    if path.exists() and workbook_has_sheet(path, "QuantityDatePairs"):
+    if path.exists() and workbook_has_sheet(path, "QuantityDatePairs") and workbook_has_sheet(path, ONLINE_VALUES_SHEET):
         return
 
     if path.exists():
+        existing_funds = extract_funds_from_manual_data(read_manual_fund_data(path))
+        template_funds = funds or existing_funds
         scalar_rows = rows_from_dicts(
             ["isin", "name", "bank", "buy_date", "sell_date", "status", "notes"],
             read_xlsx_rows(path, "ScalarValues"),
@@ -501,7 +490,19 @@ def ensure_manual_data_template(path: Path, funds: list[Fund]) -> None:
             {
                 "ScalarValues": scalar_rows,
                 "DateValuePairs": pair_rows,
-                "QuantityDatePairs": quantity_template_rows(funds),
+                "QuantityDatePairs": (
+                    rows_from_dicts(
+                        ["isin", "date", "quantity", "notes"],
+                        read_xlsx_rows(path, "QuantityDatePairs"),
+                    )
+                    if workbook_has_sheet(path, "QuantityDatePairs")
+                    else quantity_template_rows(template_funds)
+                ),
+                ONLINE_VALUES_SHEET: (
+                    rows_from_dicts(ONLINE_VALUES_HEADERS, read_xlsx_rows(path, ONLINE_VALUES_SHEET))
+                    if workbook_has_sheet(path, ONLINE_VALUES_SHEET)
+                    else [ONLINE_VALUES_HEADERS]
+                ),
             },
         )
         return
@@ -527,50 +528,9 @@ def ensure_manual_data_template(path: Path, funds: list[Fund]) -> None:
             "ScalarValues": scalar_rows,
             "DateValuePairs": pair_rows,
             "QuantityDatePairs": quantity_template_rows(funds),
+            ONLINE_VALUES_SHEET: [ONLINE_VALUES_HEADERS],
         },
     )
-
-
-def http_get_json(url: str, timeout: int = 30) -> dict:
-    request = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0 fund-history-tool/1.0",
-            "Accept": "application/json,text/plain,*/*",
-        },
-    )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-
-def read_json_cache(cache_file: Path, refresh: bool) -> dict | None:
-    if cache_file.exists() and not refresh:
-        CACHE_STATS["cache_reads"] += 1
-        return json.loads(cache_file.read_text(encoding="utf-8"))
-    return None
-
-
-def write_json_cache(cache_file: Path, data: dict) -> None:
-    CACHE_STATS["online_requests"] += 1
-    cache_file.parent.mkdir(parents=True, exist_ok=True)
-    cache_file.write_text(json.dumps(data), encoding="utf-8")
-
-
-def parse_onvista_date(timestamp_ms: int | float) -> str:
-    timestamp = float(timestamp_ms) / 1000
-    return dt.datetime.fromtimestamp(timestamp, tz=dt.UTC).date().isoformat()
-
-
-def parse_onvista_decimal(value: str | int | float | None) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    cleaned = value.strip().replace(".", "").replace(",", ".")
-    try:
-        return float(cleaned)
-    except ValueError:
-        return None
 
 
 def parse_float(value: str | int | float | None) -> float | None:
@@ -600,280 +560,6 @@ def parse_excel_date(value: str) -> str:
         return value
 
 
-def read_symbol_overrides(path: Path) -> dict[str, str]:
-    if not path.exists():
-        return {}
-    with path.open("r", encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle)
-        overrides: dict[str, str] = {}
-        for row in reader:
-            isin = (row.get("isin") or "").strip().upper()
-            symbol = (row.get("symbol") or "").strip()
-            if isin and symbol:
-                overrides[isin] = symbol
-        return overrides
-
-
-def yahoo_symbol_score(isin: str, quote: dict) -> tuple[int, str]:
-    symbol = str(quote.get("symbol") or "")
-    symbol_upper = symbol.upper()
-    fields = " ".join(str(quote.get(key, "")) for key in ("symbol", "shortname", "longname")).upper()
-    score = 0
-    if isin in fields:
-        score += 100
-    if quote.get("quoteType") in {"MUTUALFUND", "ETF", "EQUITY"}:
-        score += 10
-    if symbol_upper.endswith(".DE"):
-        score += 40
-    elif symbol_upper.endswith(".F"):
-        score += 35
-    elif symbol_upper.endswith((".BE", ".DU", ".HA", ".HM", ".MU", ".SG")):
-        score += 25
-    elif symbol_upper.endswith(".L"):
-        score -= 25
-    return score, symbol
-
-
-def resolve_yahoo_symbol(
-    isin: str,
-    cache_dir: Path,
-    overrides: dict[str, str],
-    refresh: bool = False,
-) -> str | None:
-    if isin in overrides:
-        return overrides[isin]
-    if isin in DEFAULT_SYMBOL_OVERRIDES:
-        return DEFAULT_SYMBOL_OVERRIDES[isin]
-
-    cache_file = cache_dir / "isin_symbol_cache.json"
-    cache: dict[str, str | None] = {}
-    if cache_file.exists():
-        cache = json.loads(cache_file.read_text(encoding="utf-8"))
-    if isin in cache and not refresh:
-        CACHE_STATS["cache_reads"] += 1
-        return cache[isin]
-
-    params = urllib.parse.urlencode({"q": isin, "quotesCount": 10, "newsCount": 0})
-    url = f"https://query2.finance.yahoo.com/v1/finance/search?{params}"
-    CACHE_STATS["online_requests"] += 1
-    data = http_get_json(url)
-    quotes = data.get("quotes", [])
-    candidates = [quote for quote in quotes if quote.get("symbol")]
-    symbol = max(candidates, key=lambda quote: yahoo_symbol_score(isin, quote)).get("symbol") if candidates else None
-
-    cache[isin] = symbol
-    cache_file.parent.mkdir(parents=True, exist_ok=True)
-    cache_file.write_text(json.dumps(cache, indent=2, sort_keys=True), encoding="utf-8")
-    return symbol
-
-
-def download_yahoo_chart_data(symbol: str, cache_dir: Path, period: str, interval: str, refresh: bool = False) -> dict:
-    safe_symbol = re.sub(r"[^A-Za-z0-9_.=-]", "_", symbol)
-    cache_file = cache_dir / "history" / f"{safe_symbol}_{period}_{interval}.json"
-    data = read_json_cache(cache_file, refresh)
-    if data is None:
-        params = urllib.parse.urlencode({"range": period, "interval": interval, "events": "history"})
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(symbol)}?{params}"
-        data = http_get_json(url)
-        write_json_cache(cache_file, data)
-    return data
-
-
-def yahoo_history_from_chart_data(data: dict) -> tuple[list[Quote], str | None]:
-    result = data.get("chart", {}).get("result") or []
-    if not result:
-        return [], None
-    item = result[0]
-    currency = (item.get("meta") or {}).get("currency")
-    timestamps = item.get("timestamp") or []
-    quote = ((item.get("indicators") or {}).get("quote") or [{}])[0]
-    closes = quote.get("close") or []
-
-    history: list[Quote] = []
-    for timestamp, close in zip(timestamps, closes):
-        if close is None:
-            continue
-        date = dt.datetime.fromtimestamp(timestamp, tz=dt.UTC).date().isoformat()
-        history.append(Quote(date=date, close=float(close)))
-    return history, currency
-
-
-def normalized_yahoo_currency(currency: str | None) -> tuple[str | None, float]:
-    if not currency:
-        return None, 1.0
-    raw_currency = currency.strip()
-    normalized = raw_currency.upper()
-    if raw_currency in {"GBp", "GBX"} or normalized == "GBX":
-        return "GBP", 0.01
-    if normalized in {"GBP", "GBP=X"}:
-        return "GBP", 1.0
-    return normalized, 1.0
-
-
-def convert_quotes_to_eur(
-    quotes: list[Quote],
-    currency: str | None,
-    cache_dir: Path,
-    period: str,
-    interval: str,
-    refresh: bool = False,
-) -> list[Quote]:
-    normalized_currency, unit_factor = normalized_yahoo_currency(currency)
-    if normalized_currency in {None, "EUR"}:
-        return [
-            Quote(date=quote.date, close=quote.close * unit_factor)
-            for quote in quotes
-        ]
-
-    fx_symbol = f"{normalized_currency}EUR=X"
-    fx_data = download_yahoo_chart_data(fx_symbol, cache_dir, period, interval, refresh)
-    fx_quotes, _fx_currency = yahoo_history_from_chart_data(fx_data)
-    if not fx_quotes:
-        raise ValueError(f"No EUR exchange-rate history found for {normalized_currency}.")
-
-    converted: list[Quote] = []
-    for quote in quotes:
-        fx_quote = quote_at_or_before(quote.date, fx_quotes)
-        if fx_quote is None:
-            continue
-        converted.append(Quote(date=quote.date, close=quote.close * unit_factor * fx_quote.close))
-    return converted
-
-
-def download_history(symbol: str, cache_dir: Path, period: str, interval: str, refresh: bool = False) -> list[Quote]:
-    data = download_yahoo_chart_data(symbol, cache_dir, period, interval, refresh)
-    history, currency = yahoo_history_from_chart_data(data)
-    return convert_quotes_to_eur(history, currency, cache_dir, period, interval, refresh)
-
-
-def search_onvista_instrument(isin: str, cache_dir: Path, refresh: bool = False) -> dict | None:
-    cache_file = cache_dir / "onvista_search" / f"{isin}.json"
-    data = read_json_cache(cache_file, refresh)
-    if data is None:
-        params = urllib.parse.urlencode({"searchValue": isin})
-        url = f"https://api.onvista.de/api/v1/instruments/search?{params}"
-        data = http_get_json(url)
-        write_json_cache(cache_file, data)
-
-    for item in data.get("list", []):
-        if item.get("entityType") == "FUND":
-            return item
-    return None
-
-
-def fetch_onvista_snapshot(item: dict, cache_dir: Path, refresh: bool = False) -> dict:
-    entity_value = item["entityValue"]
-    cache_file = cache_dir / "onvista_snapshot" / f"{entity_value}.json"
-    data = read_json_cache(cache_file, refresh)
-    if data is not None:
-        return data
-
-    url = item.get("urls", {}).get("WEBSITE")
-    if not url:
-        raise ValueError("Onvista search result has no website URL.")
-    request = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0 fund-history-tool/1.0",
-            "Accept": "text/html,*/*",
-        },
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        text = response.read().decode("utf-8", errors="replace")
-
-    match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', text)
-    if not match:
-        raise ValueError("Onvista page did not contain embedded snapshot data.")
-    page_data = json.loads(html.unescape(match.group(1)))
-    snapshot = page_data["props"]["pageProps"]["data"]["snapshot"]
-    write_json_cache(cache_file, snapshot)
-    return snapshot
-
-
-def download_onvista_history(isin: str, cache_dir: Path, period: str, refresh: bool = False) -> HistoryResult | None:
-    item = search_onvista_instrument(isin, cache_dir, refresh)
-    if not item:
-        return None
-
-    snapshot = fetch_onvista_snapshot(item, cache_dir, refresh)
-    instrument = snapshot["instrument"]
-    quote = snapshot.get("quote") or {}
-    market = quote.get("market") or snapshot.get("chart") or {}
-    id_notation = market.get("idNotation") or snapshot.get("chart", {}).get("idNotation")
-    code_market = market.get("codeMarket") or snapshot.get("chart", {}).get("codeMarket")
-    entity_value = instrument["entityValue"]
-
-    params = {
-        "range": onvista_range_from_period(period),
-        "idNotation": id_notation,
-        "codeMarket": code_market,
-        "isoCurrency": "EUR",
-        "withEarnings": "false",
-    }
-    params = {key: value for key, value in params.items() if value is not None}
-    cache_name = f"{entity_value}_{params.get('idNotation', 'default')}_{params['range']}.json"
-    cache_file = cache_dir / "onvista_history" / cache_name
-    data = read_json_cache(cache_file, refresh)
-    if data is None:
-        query = urllib.parse.urlencode(params)
-        url = f"https://api.onvista.de/api/v1/instruments/FUND/{entity_value}/simple_chart_history?{query}"
-        data = http_get_json(url)
-        write_json_cache(cache_file, data)
-
-    quotes: list[Quote] = []
-    for timestamp, value in zip(data.get("datetimeTick", []), data.get("tick", [])):
-        close = parse_onvista_decimal(value)
-        if close is None:
-            continue
-        quotes.append(Quote(date=parse_onvista_date(timestamp), close=close))
-
-    symbol = f"ONVISTA:{entity_value}:{id_notation or 'default'}"
-    return HistoryResult(source="onvista", symbol=symbol, quotes=quotes)
-
-
-def onvista_range_from_period(period: str) -> str:
-    normalized = period.strip().lower()
-    mapping = {
-        "1mo": "M1",
-        "3mo": "M3",
-        "6mo": "M6",
-        "1y": "Y1",
-        "3y": "Y3",
-        "5y": "Y5",
-        "10y": "Y10",
-        "max": "MAX",
-    }
-    return mapping.get(normalized, "Y5")
-
-
-def download_deka_current_value(isin: str, cache_dir: Path, refresh: bool = False) -> HistoryResult | None:
-    cache_file = cache_dir / "deka_search" / f"{isin}.json"
-    data = read_json_cache(cache_file, refresh)
-    if data is None:
-        params = urllib.parse.urlencode(
-            {
-                "service": "fondssucheController",
-                "action": "suche",
-                "elementeProSeite": 10,
-                "suchbegriff": isin,
-            }
-        )
-        url = f"https://www.deka.de/privatkunden-functions/fondssuche?{params}"
-        data = http_get_json(url)
-        write_json_cache(cache_file, data)
-
-    funds = data.get("fonds") or []
-    if not funds:
-        return None
-    fund = funds[0]
-    price = parse_onvista_decimal(fund.get("rpreis") or fund.get("apreis"))
-    if price is None:
-        return None
-    return HistoryResult(
-        source="deka-current",
-        symbol=f"DEKA:{fund.get('wkn') or isin}",
-        quotes=[Quote(date=dt.date.today().isoformat(), close=price)],
-    )
 
 
 def event_marker_markup(
@@ -1517,6 +1203,8 @@ def svg_line_chart(
     manual_series: dict[str, list[DateValue]] | None = None,
     width: int = 1700,
     height: int = 260,
+    interactive_points: bool = False,
+    show_data_markers: bool = False,
 ) -> str:
     if not quotes:
         return f"<section><h2>{html.escape(title)}</h2><p>No history data found.</p></section>"
@@ -1547,6 +1235,13 @@ def svg_line_chart(
         return pad_top + plot_h - (value - min_y) * plot_h / (max_y - min_y)
 
     points = " ".join(f"{x_at(i):.1f},{y_at(quote.close):.1f}" for i, quote in enumerate(quotes))
+    hover_points = []
+    if interactive_points:
+        for index, quote in enumerate(quotes):
+            hover_points.append(
+                f'<circle cx="{x_at(index):.1f}" cy="{y_at(quote.close):.1f}" r="7" '
+                f'class="hover-target" data-tooltip="{html.escape(f"{quote.date}: price {quote.close:.4f}")}"/>'
+            )
     first, last = quotes[0], quotes[-1]
     x_tick_indices = sorted(
         {
@@ -1669,10 +1364,15 @@ def svg_line_chart(
             for index, date, value in dividend_events:
                 x = subplot_x(index)
                 y = dividend_y(value)
+                point_markup = (
+                    f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" class="dividend-point"/>'
+                    if show_data_markers
+                    else ""
+                )
                 stem_markup.append(
                     f'<line x1="{x:.1f}" y1="{zero_y:.1f}" x2="{x:.1f}" y2="{y:.1f}" class="dividend-stem">'
                     f'<title>dividend {html.escape(date)}: {value:.2f}</title></line>'
-                    f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" class="dividend-point"/>'
+                    f'{point_markup}'
                 )
 
             dividend_markup = (
@@ -1686,6 +1386,13 @@ def svg_line_chart(
             f"{subplot_x(index):.1f},{subplot_y(value):.1f}"
             for index, value in total_series
         )
+        total_hover_points = []
+        if interactive_points:
+            for index, value in total_series:
+                total_hover_points.append(
+                    f'<circle cx="{subplot_x(index):.1f}" cy="{subplot_y(value):.1f}" r="7" '
+                    f'class="hover-target" data-tooltip="{html.escape(f"{quotes[index].date}: total value {value:.2f}")}"/>'
+                )
         total_ticks = [total_min + (total_max - total_min) * i / 4 for i in range(5)]
         total_tick_markup = []
         for tick in total_ticks:
@@ -1701,6 +1408,7 @@ def svg_line_chart(
             f'{"".join(total_tick_markup)}'
             f'{dividend_markup}'
             f'<polyline points="{total_points}" fill="none" class="total-line"/>'
+            f'{"".join(total_hover_points)}'
             f'{x_tick_labels(subplot_x)}'
         )
 
@@ -1751,6 +1459,15 @@ def svg_line_chart(
                 profit_min,
                 profit_max,
             )
+            absolute_hover_points = []
+            if interactive_points:
+                for index, value in absolute_profit:
+                    y = pad_top + plot_h - (value - profit_min) * plot_h / (profit_max - profit_min)
+                    x = profit_left + (panel_w / 2 if len(quotes) == 1 else panel_w * index / (len(quotes) - 1))
+                    absolute_hover_points.append(
+                        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="7" class="hover-target" '
+                        f'data-tooltip="{html.escape(f"{quotes[index].date}: profit {value:.2f}")}"/>'
+                    )
             relative_markup = ""
             if relative_profit:
                 relative_values = [value for _index, value in relative_profit]
@@ -1790,9 +1507,17 @@ def svg_line_chart(
                 f'<line x1="{profit_right}" y1="{pad_top}" x2="{profit_right}" y2="{height - pad_bottom}" class="relative-axis-line"/>'
                 f'{"".join(profit_tick_markup)}'
                 f'<polyline points="{absolute_points}" fill="none" class="profit-line"/>'
+                f'{"".join(absolute_hover_points)}'
                 f'{relative_markup}'
                 f'{x_tick_labels(lambda index: profit_left + (panel_w / 2 if len(quotes) == 1 else panel_w * index / (len(quotes) - 1)))}'
             )
+
+    price_marker_markup = ""
+    if show_data_markers:
+        price_marker_markup = (
+            f'<circle cx="{x_at(0):.1f}" cy="{y_at(first.close):.1f}" r="3" class="point"/>'
+            f'<circle cx="{x_at(len(quotes) - 1):.1f}" cy="{y_at(last.close):.1f}" r="3" class="point"/>'
+        )
 
     return f"""
 <section>
@@ -1802,8 +1527,8 @@ def svg_line_chart(
     {axis_markup}
     {event_markup}
     <polyline points="{points}" fill="none" class="line"/>
-    <circle cx="{x_at(0):.1f}" cy="{y_at(first.close):.1f}" r="3" class="point"/>
-    <circle cx="{x_at(len(quotes) - 1):.1f}" cy="{y_at(last.close):.1f}" r="3" class="point"/>
+    {price_marker_markup}
+    {''.join(hover_points)}
     {''.join(x_tick_markup)}
     {total_markup}
     {profit_markup}
@@ -1865,6 +1590,8 @@ def fund_chart_markup(
     sell_dates: dict[str, str],
     quantity_histories: dict[str, list[QuantityPoint]],
     manual_date_values: dict[str, dict[str, list[DateValue]]],
+    interactive_points: bool = False,
+    show_data_markers: bool = False,
 ) -> str:
     title = f"{fund.isin}"
     if source:
@@ -1882,6 +1609,8 @@ def fund_chart_markup(
         sell_dates.get(fund.isin),
         quantity_histories.get(fund.isin, []),
         manual_date_values.get(fund.isin, {}),
+        interactive_points=interactive_points,
+        show_data_markers=show_data_markers,
     )
 
 
@@ -2014,21 +1743,67 @@ def write_html_report(
     path.write_text(document, encoding="utf-8")
 
 
+def read_online_value_results(
+    path: Path,
+    funds: list[Fund],
+) -> list[tuple[Fund, str | None, str | None, list[Quote], str | None]]:
+    try:
+        rows = read_xlsx_rows(path, ONLINE_VALUES_SHEET)
+    except ValueError:
+        rows = []
+
+    quotes_by_isin: dict[str, list[Quote]] = {}
+    source_by_isin: dict[str, str] = {}
+    symbol_by_isin: dict[str, str] = {}
+    error_by_isin: dict[str, str] = {}
+    for row in rows:
+        isin = row.get("isin", "").strip().upper()
+        if not isin:
+            continue
+        source = row.get("source", "").strip()
+        symbol = row.get("symbol", "").strip()
+        if source:
+            source_by_isin[isin] = source
+        if symbol:
+            symbol_by_isin[isin] = symbol
+
+        error = row.get("error", "").strip()
+        if error:
+            error_by_isin.setdefault(isin, error)
+
+        date = parse_excel_date(row.get("date", ""))
+        close = parse_float(row.get("close"))
+        if date and close is not None:
+            quotes_by_isin.setdefault(isin, []).append(Quote(date=date, close=close))
+
+    results: list[tuple[Fund, str | None, str | None, list[Quote], str | None]] = []
+    for fund in funds:
+        quotes = sorted(quotes_by_isin.get(fund.isin, []), key=lambda quote: quote.date)
+        error = error_by_isin.get(fund.isin)
+        if not quotes and not error:
+            error = "No online values found. Run fund_online_values.py to update the OnlineValues sheet."
+        elif len(quotes) == 1:
+            error = "Only one current value found; no historical series available from configured sources."
+        results.append(
+            (
+                fund,
+                source_by_isin.get(fund.isin),
+                symbol_by_isin.get(fund.isin),
+                quotes,
+                error,
+            )
+        )
+    return results
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Fetch and plot fund value history per ISIN.")
+    parser = argparse.ArgumentParser(description="Plot fund value history from fund_manual_values.xlsx.")
     parser.add_argument("--output-dir", default=None, help="Directory for cache and report files.")
-    parser.add_argument("--period", default="5y", help="Yahoo Finance range, for example 1y, 5y, 10y, max.")
-    parser.add_argument("--interval", default="1d", help="Yahoo Finance interval, for example 1d, 1wk, 1mo.")
-    parser.add_argument("--overrides", default=None, help="CSV with columns isin,symbol for manual Yahoo symbol mapping.")
     parser.add_argument("--manual-data", default=None, help="Excel workbook for scalar overrides and manual date/value pairs.")
-    parser.add_argument("--refresh", action="store_true", help="Ignore cached ISIN resolutions and history data.")
-    parser.add_argument("--sleep", type=float, default=0.4, help="Delay between online requests.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    CACHE_STATS["cache_reads"] = 0
-    CACHE_STATS["online_requests"] = 0
     args = build_arg_parser().parse_args(argv)
     data_dir = configured_data_dir()
     input_data_dir = configured_input_data_dir()
@@ -2037,8 +1812,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.output_dir
         else (data_dir / "Web_Report").resolve()
     )
-    cache_dir = output_dir / "cache"
-    overrides_path = resolve_path(args.overrides, input_data_dir)
     manual_data_path = (
         resolve_path(args.manual_data, input_data_dir)
         if args.manual_data
@@ -2050,53 +1823,15 @@ def main(argv: list[str] | None = None) -> int:
     scalar_rows = read_xlsx_rows(manual_data_path, "ScalarValues")
     funds = extract_funds_from_manual_data(manual_data)
     quantity_histories = extract_quantity_history_from_manual_data(manual_data)
-    overrides = read_symbol_overrides(overrides_path) if overrides_path else {}
     print(f"Found {len(funds)} unique ISINs.")
-    if overrides_path:
-        print(f"Using {len(overrides)} symbol overrides from {overrides_path}.")
-    else:
-        print("Using 0 symbol overrides.")
     print(f"Using input data directory {input_data_dir}.")
     print(f"Using manual fund data from {manual_data_path}.")
-
-    report_results: list[tuple[Fund, str | None, str | None, list[Quote], str | None]] = []
-
-    for fund in funds:
-        try:
-            result: HistoryResult | None = None
-            symbol = resolve_yahoo_symbol(fund.isin, cache_dir, overrides, args.refresh)
-            time.sleep(args.sleep)
-            if symbol:
-                yahoo_quotes = download_history(symbol, cache_dir, args.period, args.interval, args.refresh)
-                time.sleep(args.sleep)
-                result = HistoryResult(source="yahoo", symbol=symbol, quotes=yahoo_quotes)
-
-            if result is None or len(result.quotes) < 2:
-                onvista_result = download_onvista_history(fund.isin, cache_dir, args.period, args.refresh)
-                time.sleep(args.sleep)
-                if onvista_result and len(onvista_result.quotes) >= 2:
-                    result = onvista_result
-
-            if result is None or not result.quotes:
-                deka_result = download_deka_current_value(fund.isin, cache_dir, args.refresh)
-                time.sleep(args.sleep)
-                if deka_result:
-                    result = deka_result
-
-            if result is None:
-                report_results.append((fund, None, None, [], "No Yahoo Finance, Onvista, or Deka data found for this ISIN."))
-                print(f"{fund.isin}: no data found")
-                continue
-
-            error = None if result.quotes else "No chart history returned."
-            if len(result.quotes) == 1:
-                error = "Only one current value found; no historical series available from configured sources."
-            report_results.append((fund, result.source, result.symbol, result.quotes, error))
-            print(f"{fund.isin}: {result.source} {result.symbol}, {len(result.quotes)} points")
-        except (urllib.error.URLError, TimeoutError, ValueError, KeyError, json.JSONDecodeError) as exc:
-            message = f"Failed to fetch data: {exc}"
-            report_results.append((fund, None, None, [], message))
-            print(f"{fund.isin}: {message}", file=sys.stderr)
+    report_results = read_online_value_results(manual_data_path, funds)
+    for fund, source, symbol, quotes, error in report_results:
+        if quotes:
+            print(f"{fund.isin}: {source or 'online'} {symbol or ''}, {len(quotes)} points")
+        else:
+            print(f"{fund.isin}: {error or 'no data found'}")
 
     buy_dates = {
         isin: parse_excel_date(scalars.get("buy_date", ""))
@@ -2124,11 +1859,6 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Wrote {report_path}")
     print(f"Wrote/checked {manual_data_path}")
     open_default_app(report_path)
-    print(
-        "Data cache: "
-        f"{CACHE_STATS['cache_reads']} cached reads, "
-        f"{CACHE_STATS['online_requests']} online requests."
-    )
     return 0
 
 
