@@ -95,26 +95,19 @@ Do not edit `OnlineValues` manually in normal use; rerun `fund_online_values.py`
 
 ## Import Old DepotManager Data
 
-To import `_old\DepotManager_DB.xlsx` into `FundTools\fund_manual_values.xlsx`, run from `FundTools`:
+To import `History.date`, `History.isin`, and `History.value` from `_old\DepotManager_DB.xlsx` into `OnlineValues`, run from the repository root:
 
 ```powershell
-python .\import_depotmanager_db.py
+python .\FundTools\import_depotmanager_history.py
 ```
 
 The importer creates a timestamped backup of `fund_manual_values.xlsx` before writing. To preview the import without changing the workbook:
 
 ```powershell
-python .\import_depotmanager_db.py --dry-run
+python .\FundTools\import_depotmanager_history.py --dry-run
 ```
 
-Imported mapping:
-
-- old `History.quantity` -> `QuantityDatePairs`, compressed to quantity changes
-- old `Changes` buys -> `DateValuePairs` with `series = invest`
-- old `Changes` dividends/interest -> `DateValuePairs` with `series = dividend`
-- old `Changes` sells -> `DateValuePairs` with `series = sell`
-
-Old `History.value` rows are not imported into `DateValuePairs`; the main tool fetches price history online unless you add manual `single_value` rows yourself.
+The importer adds legacy prices only when `OnlineValues` does not already contain the same ISIN/date, so current online data takes precedence. It creates a timestamped backup before writing.
 
 ## Import DKB Depot Export
 
