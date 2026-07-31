@@ -431,6 +431,8 @@ text { font-size: 12px; fill: #5d6673; }
 .relative-axis { font-size: 12px; fill: #6c737d; }
 .total-axis { font-size: 12px; fill: #4f5965; }
 .total-line { stroke: #2f8f83; stroke-width: 2; }
+.quantity-axis { font-size: 12px; fill: #526b78; }
+.quantity-line { stroke: #527f91; stroke-width: 2; }
 .dividend-axis { font-size: 12px; fill: #9a5a7d; }
 .dividend-stem { stroke: #9a5a7d; stroke-width: 1.8; }
 .dividend-point { fill: #9a5a7d; }

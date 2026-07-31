@@ -1218,7 +1218,7 @@ def svg_line_chart(
     sell_date: str | None = None,
     quantity_points: list[QuantityPoint] | None = None,
     manual_series: dict[str, list[DateValue]] | None = None,
-    width: int = 1700,
+    width: int = 2240,
     height: int = 260,
     interactive_points: bool = False,
     show_data_markers: bool = False,
@@ -1231,9 +1231,11 @@ def svg_line_chart(
     main_left = pad_left
     main_right = main_left + panel_w
     relative_label_x = main_right + 8
-    subplot_left = 640
+    quantity_left = 620
+    quantity_right = quantity_left + panel_w
+    subplot_left = 1180
     total_right = subplot_left + panel_w
-    profit_left = 1220
+    profit_left = 1760
     profit_right = profit_left + panel_w
     plot_w = panel_w
     plot_h = height - pad_top - pad_bottom
@@ -1315,6 +1317,67 @@ def svg_line_chart(
     if sell_index is not None and sell_date:
         event_markup += event_marker_markup(
             quotes, sell_date, sell_index, "sell", "sell", x_at, y_at, main_right, main_left, 0, 18
+        )
+
+    quantity_markup = ""
+    quantity_series = [
+        (index, quantity)
+        for index, quote in enumerate(quotes)
+        if (quantity := defined_quantity_at(quote.date, quantity_points or [])) is not None
+    ]
+    if quantity_series:
+        quantity_values = [value for _index, value in quantity_series]
+        quantity_min, quantity_max = min(quantity_values), max(quantity_values)
+        if math.isclose(quantity_min, quantity_max):
+            padding = max(abs(quantity_min) * 0.05, 1.0)
+            quantity_min -= padding
+            quantity_max += padding
+
+        def quantity_x(index: int) -> float:
+            if len(quotes) == 1:
+                return quantity_left + panel_w / 2
+            return quantity_left + panel_w * index / (len(quotes) - 1)
+
+        def quantity_y(value: float) -> float:
+            return pad_top + plot_h - (value - quantity_min) * plot_h / (quantity_max - quantity_min)
+
+        first_quantity_index, first_quantity = quantity_series[0]
+        quantity_path_parts = [
+            f"M {quantity_x(first_quantity_index):.1f},{quantity_y(first_quantity):.1f}"
+        ]
+        previous_quantity = first_quantity
+        for index, quantity in quantity_series[1:]:
+            x = quantity_x(index)
+            quantity_path_parts.append(f"H {x:.1f}")
+            if not math.isclose(quantity, previous_quantity):
+                quantity_path_parts.append(f"V {quantity_y(quantity):.1f}")
+            previous_quantity = quantity
+
+        quantity_ticks = [
+            quantity_min + (quantity_max - quantity_min) * i / 4
+            for i in range(5)
+        ]
+        quantity_tick_markup = []
+        for tick in quantity_ticks:
+            y = quantity_y(tick)
+            quantity_tick_markup.append(
+                f'<line x1="{quantity_left}" y1="{y:.1f}" x2="{quantity_right}" y2="{y:.1f}" class="grid"/>'
+                f'<text x="{quantity_left - 8}" y="{y + 4:.1f}" text-anchor="end" class="quantity-axis">{tick:g}</text>'
+            )
+        quantity_hover_points = []
+        if interactive_points:
+            for index, quantity in quantity_series:
+                quantity_hover_points.append(
+                    f'<circle cx="{quantity_x(index):.1f}" cy="{quantity_y(quantity):.1f}" r="7" '
+                    f'class="hover-target" data-tooltip="{html.escape(f"{quotes[index].date}: quantity {quantity:g}")}"/>'
+                )
+        quantity_markup = (
+            f'<text x="{quantity_left}" y="{pad_top - 6}" class="quantity-axis">quantity</text>'
+            f'<line x1="{quantity_left}" y1="{pad_top}" x2="{quantity_left}" y2="{height - pad_bottom}" class="relative-axis-line"/>'
+            f'{"".join(quantity_tick_markup)}'
+            f'<path d="{" ".join(quantity_path_parts)}" fill="none" class="quantity-line"/>'
+            f'{"".join(quantity_hover_points)}'
+            f'{x_tick_labels(quantity_x)}'
         )
 
     total_markup = ""
@@ -1547,6 +1610,7 @@ def svg_line_chart(
     {price_marker_markup}
     {''.join(hover_points)}
     {''.join(x_tick_markup)}
+    {quantity_markup}
     {total_markup}
     {profit_markup}
   </svg>
@@ -1730,6 +1794,8 @@ def write_html_report(
     .relative-axis {{ font-size: 12px; fill: #6c737d; }}
     .total-axis {{ font-size: 12px; fill: #4f5965; }}
     .total-line {{ stroke: #2f8f83; stroke-width: 2; }}
+    .quantity-axis {{ font-size: 12px; fill: #526b78; }}
+    .quantity-line {{ stroke: #527f91; stroke-width: 2; }}
     .dividend-axis {{ font-size: 12px; fill: #9a5a7d; }}
     .dividend-stem {{ stroke: #9a5a7d; stroke-width: 1.8; }}
     .dividend-point {{ fill: #9a5a7d; }}
