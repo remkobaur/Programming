@@ -8,6 +8,7 @@ import csv
 import datetime as dt
 import html
 import json
+import os
 import re
 import sys
 import time
@@ -472,6 +473,13 @@ def online_rows_from_result(fund: Fund, result: HistoryResult | None, error: str
     ]
 
 
+def env_flag(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Update OnlineValues in fund_manual_values.xlsx.")
     parser.add_argument("--output-dir", default=None, help="Directory for cache files.")
@@ -479,7 +487,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--interval", default="1d", help="Yahoo Finance interval, for example 1d, 1wk, 1mo.")
     parser.add_argument("--overrides", default=None, help="CSV with columns isin,symbol for manual Yahoo symbol mapping.")
     parser.add_argument("--manual-data", default=None, help="Excel workbook to update.")
-    parser.add_argument("--refresh", action="store_true", help="Ignore cached ISIN resolutions and history data.")
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        default=env_flag("FUND_ONLINE_REFRESH"),
+        help="Ignore cached ISIN resolutions and history data (or set FUND_ONLINE_REFRESH=true).",
+    )
     parser.add_argument("--sleep", type=float, default=0.4, help="Delay between online requests.")
     return parser
 
@@ -488,6 +501,7 @@ def main(argv: list[str] | None = None) -> int:
     CACHE_STATS["cache_reads"] = 0
     CACHE_STATS["online_requests"] = 0
     args = build_arg_parser().parse_args(argv)
+    
     data_dir = configured_data_dir()
     input_data_dir = configured_input_data_dir()
     output_dir = (

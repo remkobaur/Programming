@@ -93,6 +93,23 @@ def configured_input_data_dir() -> Path:
     return configured_data_dir() / "Input_Data"
 
 
+def configured_date_filter() -> tuple[str | None, str | None]:
+    start = (os.environ.get("FUND_DATEFILTER_START") or "").strip() or None
+    end = (os.environ.get("FUND_DATEFILTER_END") or "").strip() or None
+    for name, value in (
+        ("FUND_DATEFILTER_START", start),
+        ("FUND_DATEFILTER_END", end),
+    ):
+        if value:
+            try:
+                dt.date.fromisoformat(value)
+            except ValueError as exc:
+                raise ValueError(f"{name} must use YYYY-MM-DD format, got {value!r}.") from exc
+    if start and end and start > end:
+        raise ValueError("FUND_DATEFILTER_START must not be later than FUND_DATEFILTER_END.")
+    return start, end
+
+
 def resolve_path(value: str | None, base_dir: Path) -> Path | None:
     if not value:
         return None
@@ -1537,18 +1554,32 @@ def svg_line_chart(
 """.strip()
 
 
-def html_scalar_values_table(rows: list[dict[str, str]]) -> str:
+def html_scalar_values_table(
+    rows: list[dict[str, str]],
+    quantity_histories: dict[str, list[QuantityPoint]],
+) -> str:
     visible_rows = [row for row in rows if any(value.strip() for value in row.values())]
     if not visible_rows:
         return "<section><h2>Fund overview</h2><p>No ScalarValues rows found.</p></section>"
 
     headers = list(visible_rows[0])
+    quantity_index = headers.index("bank") + 1 if "bank" in headers else len(headers)
+    headers.insert(quantity_index, "quantity")
     head_markup = "".join(f"<th>{html.escape(header)}</th>" for header in headers)
     body_markup = []
     for row in visible_rows:
+        isin = row.get("isin", "").strip().upper()
+        quantity_points = quantity_histories.get(isin, [])
+        quantity = f"{quantity_points[-1].quantity:g}" if quantity_points else ""
+        display_row = {**row, "quantity": quantity}
+        sold = (
+            row.get("status", "").strip().lower() == "sold"
+            or has_valid_iso_date(parse_excel_date(row.get("sell_date", "")))
+        )
+        row_class = ' class="sold-fund"' if sold else ""
         body_markup.append(
-            "<tr>"
-            + "".join(f"<td>{html.escape(row.get(header, ''))}</td>" for header in headers)
+            f"<tr{row_class}>"
+            + "".join(f"<td>{html.escape(display_row.get(header, ''))}</td>" for header in headers)
             + "</tr>"
         )
 
@@ -1630,7 +1661,7 @@ def write_html_report(
         svg_portfolio_profit_bar_chart(results, quantity_histories, manual_date_values),
         svg_yearly_relative_profit_bar_chart(results, quantity_histories, manual_date_values),
         svg_portfolio_total_profit_chart(results, quantity_histories, manual_date_values),
-        html_scalar_values_table(scalar_rows),
+        html_scalar_values_table(scalar_rows, quantity_histories),
     ]
 
     active_results = [
@@ -1681,6 +1712,7 @@ def write_html_report(
     td {{ color: #384250; }}
     .fund-overview td {{ min-width: 90px; }}
     .fund-overview td:nth-child(2) {{ min-width: 220px; }}
+    .fund-overview tr.sold-fund td {{ color: #8a919b; }}
     svg {{ width: 100%; height: auto; display: block; }}
     text {{ font-size: 12px; fill: #5d6673; }}
     .grid {{ stroke: #e4e8ee; stroke-width: 1; }}
@@ -1746,6 +1778,8 @@ def write_html_report(
 def read_online_value_results(
     path: Path,
     funds: list[Fund],
+    date_filter_start: str | None = None,
+    date_filter_end: str | None = None,
 ) -> list[tuple[Fund, str | None, str | None, list[Quote], str | None]]:
     try:
         rows = read_xlsx_rows(path, ONLINE_VALUES_SHEET)
@@ -1779,9 +1813,19 @@ def read_online_value_results(
     results: list[tuple[Fund, str | None, str | None, list[Quote], str | None]] = []
     for fund in funds:
         quotes = sorted(quotes_by_isin.get(fund.isin, []), key=lambda quote: quote.date)
+        had_unfiltered_quotes = bool(quotes)
+        quotes = [
+            quote
+            for quote in quotes
+            if (date_filter_start is None or quote.date >= date_filter_start)
+            and (date_filter_end is None or quote.date <= date_filter_end)
+        ]
         error = error_by_isin.get(fund.isin)
         if not quotes and not error:
-            error = "No online values found. Run fund_online_values.py to update the OnlineValues sheet."
+            if had_unfiltered_quotes and (date_filter_start or date_filter_end):
+                error = "No online values found within the configured date filter."
+            else:
+                error = "No online values found. Run fund_online_values.py to update the OnlineValues sheet."
         elif len(quotes) == 1:
             error = "Only one current value found; no historical series available from configured sources."
         results.append(
@@ -1807,6 +1851,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     data_dir = configured_data_dir()
     input_data_dir = configured_input_data_dir()
+    date_filter_start, date_filter_end = configured_date_filter()
     output_dir = (
         resolve_path(args.output_dir, Path.cwd())
         if args.output_dir
@@ -1826,7 +1871,14 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Found {len(funds)} unique ISINs.")
     print(f"Using input data directory {input_data_dir}.")
     print(f"Using manual fund data from {manual_data_path}.")
-    report_results = read_online_value_results(manual_data_path, funds)
+    if date_filter_start or date_filter_end:
+        print(f"Using date filter {date_filter_start or 'beginning'} through {date_filter_end or 'end'}.")
+    report_results = read_online_value_results(
+        manual_data_path,
+        funds,
+        date_filter_start,
+        date_filter_end,
+    )
     for fund, source, symbol, quotes, error in report_results:
         if quotes:
             print(f"{fund.isin}: {source or 'online'} {symbol or ''}, {len(quotes)} points")

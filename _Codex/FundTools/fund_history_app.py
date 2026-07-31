@@ -208,7 +208,7 @@ class FundHistoryApp:
             svg_portfolio_profit_bar_chart(results, quantity_histories, manual_date_values),
             svg_yearly_relative_profit_bar_chart(results, quantity_histories, manual_date_values),
             svg_portfolio_total_profit_chart(results, quantity_histories, manual_date_values),
-            html_scalar_values_table(scalar_rows),
+            html_scalar_values_table(scalar_rows, quantity_histories),
         ]
         return "".join(charts)
 
@@ -413,6 +413,7 @@ table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th, td { padding: 7px 9px; border-bottom: 1px solid #e4e8ee; text-align: left; vertical-align: top; }
 th { background: #f2f5f8; color: #384250; font-weight: 700; white-space: nowrap; }
 td { color: #384250; }
+.fund-overview tr.sold-fund td { color: #8a919b; }
 svg { width: 100%; height: auto; display: block; }
 text { font-size: 12px; fill: #5d6673; }
 .grid { stroke: #e4e8ee; stroke-width: 1; }
