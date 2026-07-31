@@ -455,6 +455,36 @@ text { font-size: 12px; fill: #5d6673; }
 .bar-value { font-size: 12px; fill: #384250; }
 .profit-bar-positive { fill: #2f8f83; }
 .profit-bar-negative { fill: #d1495b; }
+@media print {
+  .fund-overview-section {
+    break-before: page;
+    page-break-before: always;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+  .fund-overview-section .table-wrap { overflow: visible; }
+  .fund-overview {
+    width: 100%;
+    table-layout: fixed;
+    font-size: 9px;
+  }
+  .fund-overview thead { display: table-header-group; }
+  .fund-overview tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .fund-overview th,
+  .fund-overview td {
+    min-width: 0;
+    padding: 4px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .fund-section {
+    break-before: page;
+    page-break-before: always;
+  }
+}
 """
 
 

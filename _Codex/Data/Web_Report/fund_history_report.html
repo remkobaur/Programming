@@ -67,6 +67,34 @@
         break-inside: avoid;
         page-break-inside: avoid;
       }
+      .fund-overview-section {
+        break-before: page;
+        page-break-before: always;
+        break-inside: auto;
+        page-break-inside: auto;
+      }
+      .fund-overview-section .table-wrap { overflow: visible; }
+      .fund-overview {
+        width: 100%;
+        table-layout: fixed;
+        font-size: 9px;
+      }
+      .fund-overview thead { display: table-header-group; }
+      .fund-overview tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      .fund-overview th,
+      .fund-overview td {
+        min-width: 0;
+        padding: 4px;
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+      .fund-section {
+        break-before: page;
+        page-break-before: always;
+      }
       svg {
         break-inside: avoid;
         page-break-inside: avoid;
@@ -76,7 +104,7 @@
 </head>
 <body>
   <h1>Fund History</h1>
-  <p class="meta">Generated 2026-07-31T09:08:14 for 14 ISINs.</p>
+  <p class="meta">Generated 2026-07-31T09:15:54 for 14 ISINs.</p>
   <section>
   <h2>Portfolio allocation</h2>
   <svg viewBox="0 0 900 460" role="img" aria-label="Portfolio allocation by total value">
@@ -121,7 +149,7 @@
     <text x="872" y="42" text-anchor="end" class="bar-value">latest -1,479</text>
     <text x="322.9" y="290" text-anchor="middle" class="bar-axis">2025</text><text x="724.9" y="290" text-anchor="middle" class="bar-axis">2026</text>
   </svg>
-</section><section>
+</section><section class="fund-overview-section">
   <h2>Fund overview</h2>
   <div class="table-wrap">
     <table class="fund-overview">
