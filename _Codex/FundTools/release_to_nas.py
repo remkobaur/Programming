@@ -30,7 +30,7 @@ RELEASE_FILES = (
 
 
 def copy_file(source: Path, destination: Path, *, overwrite: bool) -> None:
-    """Stage a complete file; never overwrite existing NAS input data."""
+    """Stage a complete file, optionally preserving an existing destination."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     if not overwrite:
         # Exclusive creation also protects against files created after planning.
@@ -71,18 +71,17 @@ def release(destination: Path, *, include_input_data=False, dry_run=False,
             or destination in source_root.parents):
         raise ValueError('Destination must be separate from the local repository')
     files = [(source_root / name, destination / name, True) for name in RELEASE_FILES]
-    if include_input_data:
-        inputs = source_root / 'Data' / 'Input_Data'
-        workbook = inputs / 'fund_manual_values.xlsx'
+    configured_data = (os.environ.get('DATA_PATH') or '').strip()
+    if configured_data or include_input_data:
+        data_source = (Path(configured_data).expanduser().resolve()
+                       if configured_data else source_root / 'Data')
+        workbook = data_source / 'Input_Data' / 'fund_manual_values.xlsx'
+        target = destination / 'Data' / 'Input_Data' / workbook.name
+        if workbook == target:
+            raise ValueError('Source workbook must be separate from the NAS workbook')
         if not workbook.is_file():
             raise ValueError(f'Missing initial portfolio workbook: {workbook}')
-        files.extend((path, destination / 'Data' / 'Input_Data' / path.relative_to(inputs), False)
-                     for path in sorted(inputs.rglob('*'))
-                     if path.is_file() and path.suffix.lower() in {'.xlsx', '.csv'}
-                     and not path.name.startswith('~$')
-                     and not any(part.lower() in {'backups', 'cache', '_old'}
-                                 for part in path.relative_to(inputs).parts[:-1])
-                     and '.bak.' not in path.name.lower())
+        files.append((workbook, target, bool(configured_data)))
     # Check all sources before changing the destination.
     for source, target, overwrite in files:
         if not source.is_file():
@@ -116,7 +115,8 @@ def release(destination: Path, *, include_input_data=False, dry_run=False,
             print(f'SKIP existing input: {target}')
             skipped += 1
             continue
-        print(f'{"WOULD COPY" if dry_run else "COPY"}: {source.relative_to(source_root)} -> {target}')
+        source_label = source.relative_to(source_root) if source.is_relative_to(source_root) else source
+        print(f'{"WOULD COPY" if dry_run else "COPY"}: {source_label} -> {target}')
         if not dry_run:
             try:
                 copy_file(source, target, overwrite=overwrite)
@@ -135,7 +135,7 @@ def main(argv=None) -> int:
     parser.add_argument('destination', type=Path, nargs='?',
                         help='Override the NAS base directory (NAS_PROJECT_PATH); releases go into docker/fund-report.')
     parser.add_argument('--include-input-data', action='store_true',
-                        help='Also seed CSV/XLSX inputs, skipping existing NAS files.')
+                        help='Also seed the local fund_manual_values.xlsx workbook, skipping an existing NAS copy.')
     parser.add_argument('--dry-run', action='store_true', help='List planned copies without writing.')
     args = parser.parse_args(argv)
     try:

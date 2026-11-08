@@ -1251,7 +1251,7 @@ def svg_line_chart(
     sell_date: str | None = None,
     quantity_points: list[QuantityPoint] | None = None,
     manual_series: dict[str, list[DateValue]] | None = None,
-    width: int = 2240,
+    width: int = 1120,
     height: int = 260,
     interactive_points: bool = False,
     show_data_markers: bool = False,
@@ -1635,7 +1635,8 @@ def svg_line_chart(
     return f"""
 <section>
   <h2>{html.escape(title)}</h2>
-  <svg viewBox="0 0 {width} {height}" role="img" aria-label="{html.escape(title)}">
+  <svg viewBox="0 0 {width} {height * 2 + 20}" role="img" aria-label="{html.escape(title)}">
+    <g aria-label="Price">
     {''.join(tick_markup)}
     {axis_markup}
     {event_markup}
@@ -1643,9 +1644,16 @@ def svg_line_chart(
     {price_marker_markup}
     {''.join(hover_points)}
     {''.join(x_tick_markup)}
+    </g>
+    <g aria-label="Quantity">
     {quantity_markup}
+    </g>
+    <g transform="translate({main_left - subplot_left} {height + 20})" aria-label="Total value and dividends">
     {total_markup}
+    </g>
+    <g transform="translate({quantity_left - profit_left} {height + 20})" aria-label="Profit">
     {profit_markup}
+    </g>
   </svg>
 </section>
 """.strip()
