@@ -147,3 +147,13 @@ Then rerun:
 ```powershell
 python .\FundTools\fund_online_values.py --overrides .\my_symbol_overrides.csv --refresh
 ```
+
+## NAS and unattended updates
+
+See [NAS setup](../docs/nas-setup.md) and [code details](../docs/code-adjustments.md). Existing Windows commands remain supported. For unattended publication use:
+
+```sh
+python FundTools/update_fund_report.py --publish-dir /published
+```
+
+The orchestrator refreshes prices, backs up the workbook (newest 30 retained), generates headlessly, and publishes only after successful validation. It uses a cross-platform lock and 60-minute child-process timeouts. Avoid simultaneous manual edits/imports. The standalone updater now returns nonzero for incomplete refreshes while retaining previous prices; diagnostics are in `Web_Report/refresh_status.json`.

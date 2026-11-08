@@ -17,6 +17,7 @@ import os
 import re
 import sys
 import zipfile
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -453,8 +454,36 @@ def styles_xml() -> str:
 """
 
 
+def atomic_write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(dir=path.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        if os.name != "nt":
+            temporary.chmod(0o644)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def write_xlsx(path: Path, sheets: dict[str, list[list[object]]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    sheet_names = list(sheets)
+    fd, temporary_name = tempfile.mkstemp(dir=path.parent, suffix=".xlsx")
+    os.close(fd)
+    temporary = Path(temporary_name)
+    try:
+        _write_xlsx_contents(temporary, sheets)
+        if path.exists():
+            temporary.chmod(path.stat().st_mode)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _write_xlsx_contents(path: Path, sheets: dict[str, list[list[object]]]) -> None:
     sheet_names = list(sheets)
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as workbook:
         workbook.writestr("[Content_Types].xml", content_types_xml(len(sheet_names)))
@@ -1866,7 +1895,7 @@ def write_html_report(
 </body>
 </html>
 """
-    path.write_text(document, encoding="utf-8")
+    atomic_write_text(path, document)
 
 
 def read_online_value_results(
@@ -1936,6 +1965,7 @@ def read_online_value_results(
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Plot fund value history from fund_manual_values.xlsx.")
+    parser.add_argument("--no-open", action="store_true")
     parser.add_argument("--output-dir", default=None, help="Directory for cache and report files.")
     parser.add_argument("--manual-data", default=None, help="Excel workbook for scalar overrides and manual date/value pairs.")
     return parser
@@ -2004,7 +2034,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"Wrote {report_path}")
     print(f"Wrote/checked {manual_data_path}")
-    open_default_app(report_path)
+    if not args.no_open and os.name == "nt":
+        open_default_app(report_path)
     return 0
 
 

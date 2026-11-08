@@ -18,6 +18,7 @@ import urllib.request
 from pathlib import Path
 
 from fund_history_tool import (
+    atomic_write_text,
     ONLINE_VALUES_HEADERS,
     ONLINE_VALUES_SHEET,
     Fund,
@@ -523,6 +524,7 @@ def main(argv: list[str] | None = None) -> int:
     overrides = read_symbol_overrides(overrides_path) if overrides_path else {}
     updated_at = dt.datetime.now().isoformat(timespec="seconds")
     rows: list[dict[str, str]] = []
+    previous = read_xlsx_rows(manual_data_path, ONLINE_VALUES_SHEET) if workbook_has_sheet(manual_data_path, ONLINE_VALUES_SHEET) else []
 
     print(f"Found {len(funds)} unique ISINs.")
     print(f"Using manual fund data from {manual_data_path}.")
@@ -557,14 +559,28 @@ def main(argv: list[str] | None = None) -> int:
             rows.extend(online_rows_from_result(fund, None, message, updated_at))
             print(f"{fund.isin}: {message}", file=sys.stderr)
 
-    write_online_values(manual_data_path, rows)
+    outcomes = {}
+    merged = {(r.get("isin"), r.get("date")): r for r in previous}
+    for fund in funds:
+        fresh = [r for r in rows if r["isin"] == fund.isin]
+        success = bool(fresh) and all(not r.get("error") and r.get("date") for r in fresh)
+        outcomes[fund.isin] = {"success": success, "error": next((r.get("error") for r in fresh if r.get("error")), "")}
+        if success:
+            merged.pop((fund.isin, ""), None)
+            for row in fresh:
+                merged[(fund.isin, row["date"])] = row
+        elif not any(r.get("isin") == fund.isin for r in previous):
+            for row in fresh:
+                merged[(fund.isin, row.get("date", ""))] = row
+    write_online_values(manual_data_path, list(merged.values()))
+    atomic_write_text(output_dir / "refresh_status.json", json.dumps({"attempted_at": updated_at, "funds": outcomes}, indent=2))
     print(f"Updated {ONLINE_VALUES_SHEET} in {manual_data_path}.")
     print(
         "Data cache: "
         f"{CACHE_STATS['cache_reads']} cached reads, "
         f"{CACHE_STATS['online_requests']} online requests."
     )
-    return 0
+    return 0 if outcomes and all(v["success"] for v in outcomes.values()) else 1
 
 
 if __name__ == "__main__":

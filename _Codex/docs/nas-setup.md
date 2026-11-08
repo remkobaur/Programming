@@ -2,7 +2,7 @@
 
 This guide hosts the report on a Synology DS225+ using its LAN IP and a dedicated port. It uses Web Station for the static HTML, a temporary Python container for updates, and DSM Task Scheduler for a weekly run. No subdomain, DNS configuration, or reverse proxy is required.
 
-Complete [the code changes](code-adjustments.md) before enabling scheduled updates. The commands below assume those changes have been implemented; they are not present in the original scripts.
+Complete [the code changes](code-adjustments.md) before enabling scheduled updates. The core Python changes are now implemented; verify them locally and on the NAS before enabling scheduling.
 
 ## 1. Prepare DSM and folders
 
@@ -109,7 +109,7 @@ LOG="$PROJECT/logs/update-$(date +%Y%m%d-%H%M%S).log"
 cat "$LOG"
 ```
 
-`update_fund_report.py` is the new orchestrator described in [code-adjustments.md](code-adjustments.md). Create and validate it before using this task. `TZ` requests the local timezone; verify logged timestamps in the selected image, as timezone data availability can affect the result. Scheduling itself uses DSM's timezone.
+`update_fund_report.py` is the new orchestrator described in [code-adjustments.md](code-adjustments.md). Validate it with your workbook before using this task. `TZ` requests the local timezone; verify logged timestamps in the selected image, as timezone data availability can affect the result. Scheduling itself uses DSM's timezone.
 
 Check the Docker executable location on your NAS if the initial `test -x` fails; adjust `DOCKER` to the installed path. Do not change DSM-managed system files.
 

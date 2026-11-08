@@ -1,6 +1,6 @@
 # Python changes for unattended NAS updates
 
-This is an implementation guide for the existing `FundTools` scripts. It describes changes to make before following [nas-setup.md](nas-setup.md). Creating these instructions does not change the Python code.
+The core changes below are implemented in the existing `FundTools` scripts and the new `update_fund_report.py`. It describes changes to make before following [nas-setup.md](nas-setup.md). The remaining deployment checks must be performed on the NAS.
 
 ## Current behavior
 
@@ -163,3 +163,9 @@ Use a disposable copy of the workbook and a temporary publication directory for 
 - **Resource limits:** run with the NAS guide's memory and CPU limits using a realistic workbook; observe peak memory and runtime. On disposable data, verify that a deliberately insufficient memory limit causes a failed task without corrupting the workbook or leaving partial public HTML.
 
 After these pass, follow [the NAS deployment guide](nas-setup.md), run the DSM task manually once, and then enable its weekly schedule.
+
+## Implemented compatibility and operational defaults
+
+Existing Windows commands and GUI launcher remain supported. The orchestrator uses Windows or Linux locking conditionally, retains 30 workbook backups, and gives each child process a 60-minute timeout. Refresh diagnostics are stored privately in `Web_Report/refresh_status.json`. Failed refreshes return nonzero and preserve old quotes. The strict historical refresh policy treats one-quote results as incomplete. Manual imports and workbook editing must run separately from the orchestrator.
+
+Automated checks performed locally cover copied-workbook report generation, GUI imports, atomic replacement failure, backup creation, and publication preservation after a child failure. Linux/container memory measurements and provider integration remain deployment checks.
