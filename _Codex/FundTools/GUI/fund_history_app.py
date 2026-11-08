@@ -11,7 +11,10 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from fund_history_tool import (
+# Support direct execution from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from generate_fund_report import (
     DateValue,
     Fund,
     QuantityPoint,
@@ -35,7 +38,7 @@ from fund_history_tool import (
     svg_portfolio_total_profit_chart,
     svg_yearly_relative_profit_bar_chart,
 )
-from import_dkb_export import integrate_dkb_export, write_manual_workbook
+from Tools.import_dkb_export import integrate_dkb_export, write_manual_workbook
 
 
 Result = tuple[Fund, str | None, str | None, list[Quote], str | None]

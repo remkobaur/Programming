@@ -4,7 +4,7 @@
 The tool intentionally uses only Python's standard library so it can run in a
 minimal environment. It reads .xlsx files directly and writes an HTML report
 with inline SVG plots. Online values are read from the OnlineValues worksheet;
-update that sheet with fund_online_values.py.
+update that sheet with update_fund_online_values.py.
 """
 
 from __future__ import annotations
@@ -461,6 +461,8 @@ def atomic_write_text(path: Path, text: str) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
         if os.name != "nt":
             temporary.chmod(0o644)
         os.replace(temporary, path)
@@ -476,6 +478,8 @@ def write_xlsx(path: Path, sheets: dict[str, list[list[object]]]) -> None:
     temporary = Path(temporary_name)
     try:
         _write_xlsx_contents(temporary, sheets)
+        with temporary.open("r+b") as handle:
+            os.fsync(handle.fileno())
         if path.exists():
             temporary.chmod(path.stat().st_mode)
         os.replace(temporary, path)
@@ -1756,6 +1760,12 @@ def write_html_report(
         svg_portfolio_total_profit_chart(results, quantity_histories, manual_date_values),
         html_scalar_values_table(scalar_rows, quantity_histories),
     ]
+    unavailable = [fund.isin for fund, _, _, _, error in results if error]
+    if unavailable:
+        charts.insert(0, '<section><h2>Data availability</h2><p>'
+                      'Portfolio charts may be incomplete because price history is unavailable for: '
+                      + html.escape(', '.join(unavailable))
+                      + '. See the notes for each fund below.</p></section>')
 
     active_results = [
         result for result in results
@@ -1948,7 +1958,7 @@ def read_online_value_results(
             if had_unfiltered_quotes and (date_filter_start or date_filter_end):
                 error = "No online values found within the configured date filter."
             else:
-                error = "No online values found. Run fund_online_values.py to update the OnlineValues sheet."
+                error = "No online values found. Run update_fund_online_values.py to update the OnlineValues sheet."
         elif len(quotes) == 1:
             error = "Only one current value found; no historical series available from configured sources."
         results.append(

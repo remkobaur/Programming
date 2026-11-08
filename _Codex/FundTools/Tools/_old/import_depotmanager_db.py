@@ -9,7 +9,10 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-from fund_history_tool import (
+# Support direct execution from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from generate_fund_report import (
     configured_data_dir,
     configured_input_data_dir,
     load_project_env,

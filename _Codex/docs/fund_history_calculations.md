@@ -1,6 +1,6 @@
 # Fund History Plot Calculations
 
-This document describes the values calculated by `fund_history_tool.py` for the
+This document describes the values calculated by `generate_fund_report.py` for the
 HTML report plots.
 
 ## Notation

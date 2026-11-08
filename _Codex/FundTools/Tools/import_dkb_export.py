@@ -8,7 +8,10 @@ import shutil
 import sys
 from pathlib import Path
 
-from fund_history_tool import (
+# Support direct execution from any working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from generate_fund_report import (
     ONLINE_VALUES_HEADERS,
     ONLINE_VALUES_SHEET,
     configured_input_data_dir,

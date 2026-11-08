@@ -17,7 +17,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from fund_history_tool import (
+from generate_fund_report import (
     atomic_write_text,
     ONLINE_VALUES_HEADERS,
     ONLINE_VALUES_SHEET,
@@ -580,7 +580,12 @@ def main(argv: list[str] | None = None) -> int:
         f"{CACHE_STATS['cache_reads']} cached reads, "
         f"{CACHE_STATS['online_requests']} online requests."
     )
-    return 0 if outcomes and all(v["success"] for v in outcomes.values()) else 1
+    failed = [isin for isin, outcome in outcomes.items() if not outcome["success"]]
+    if failed:
+        print("Warning: incomplete price refresh for " + ", ".join(failed)
+              + ". Previous prices were retained where available; report generation can continue.",
+              file=sys.stderr)
+    return 0 if outcomes else 1
 
 
 if __name__ == "__main__":

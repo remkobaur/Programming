@@ -15,13 +15,13 @@ Downloaded online values are normalized to EUR before they are written to `Onlin
 First update the online values sheet:
 
 ```powershell
-python .\FundTools\fund_online_values.py
+python .\FundTools\update_fund_online_values.py
 ```
 
 Then generate the report from the workbook only:
 
 ```powershell
-python .\FundTools\fund_history_tool.py
+python .\FundTools\generate_fund_report.py
 ```
 
 Outputs are written to `Data\Web_Report`:
@@ -37,7 +37,13 @@ Outputs are written to `Data\Web_Report`:
 Start the local GUI app from the repository root:
 
 ```powershell
-.\FundTools\run_fund_history_app.cmd
+.\FundTools\GUI\run_fund_history_app.cmd
+```
+
+The GUI script is located in `FundTools\GUI`. You can also launch it directly:
+
+```powershell
+python .\FundTools\GUI\fund_history_app.py
 ```
 
 The app opens in the browser with four tabs:
@@ -91,20 +97,20 @@ Use `QuantityDatePairs` to supply quantity history as explicit date/quantity pai
 - `error`
 - `updated_at`
 
-Do not edit `OnlineValues` manually in normal use; rerun `fund_online_values.py` to replace the data in that sheet.
+Do not edit `OnlineValues` manually in normal use; rerun `update_fund_online_values.py` to replace the data in that sheet.
 
 ## Import Old DepotManager Data
 
 To import `History.date`, `History.isin`, and `History.value` from `_old\DepotManager_DB.xlsx` into `OnlineValues`, run from the repository root:
 
 ```powershell
-python .\FundTools\import_depotmanager_history.py
+python .\FundTools\Tools\import_depotmanager_history.py
 ```
 
 The importer creates a timestamped backup of `fund_manual_values.xlsx` before writing. To preview the import without changing the workbook:
 
 ```powershell
-python .\FundTools\import_depotmanager_history.py --dry-run
+python .\FundTools\Tools\import_depotmanager_history.py --dry-run
 ```
 
 The importer adds legacy prices only when `OnlineValues` does not already contain the same ISIN/date, so current online data takes precedence. It creates a timestamped backup before writing.
@@ -114,7 +120,7 @@ The importer adds legacy prices only when `OnlineValues` does not already contai
 Put DKB depot exports in `Data\Input_Data\DKB`, then run from the repository root:
 
 ```powershell
-python .\FundTools\import_dkb_export.py
+python .\FundTools\Tools\import_dkb_export.py
 ```
 
 The importer reads `.csv` and `.xlsx` exports from that folder, creates a timestamped backup of `fund_manual_values.xlsx`, and keeps existing workbook data. It only adds DKB quantity rows that are not already present:
@@ -124,13 +130,13 @@ The importer reads `.csv` and `.xlsx` exports from that folder, creates a timest
 To preview the import without changing the workbook:
 
 ```powershell
-python .\FundTools\import_dkb_export.py --dry-run
+python .\FundTools\Tools\import_dkb_export.py --dry-run
 ```
 
 Common options:
 
 ```powershell
-python .\FundTools\fund_online_values.py --period max --interval 1wk --refresh
+python .\FundTools\update_fund_online_values.py --period max --interval 1wk --refresh
 ```
 
 Yahoo Finance and Onvista do not always resolve every ISIN. When no source can be found, the report includes that ISIN with a note instead of failing the whole run.
@@ -145,7 +151,7 @@ LU0323578657,EXAMPLE.F
 Then rerun:
 
 ```powershell
-python .\FundTools\fund_online_values.py --overrides .\my_symbol_overrides.csv --refresh
+python .\FundTools\update_fund_online_values.py --overrides .\my_symbol_overrides.csv --refresh
 ```
 
 ## NAS and unattended updates
@@ -153,7 +159,7 @@ python .\FundTools\fund_online_values.py --overrides .\my_symbol_overrides.csv -
 See [NAS setup](../docs/nas-setup.md) and [code details](../docs/code-adjustments.md). Existing Windows commands remain supported. For unattended publication use:
 
 ```sh
-python FundTools/update_fund_report.py --publish-dir /published
+python FundTools/NAS/refresh_and_publish_fund_report.py --publish-dir /published
 ```
 
-The orchestrator refreshes prices, backs up the workbook (newest 30 retained), generates headlessly, and publishes only after successful validation. It uses a cross-platform lock and 60-minute child-process timeouts. Avoid simultaneous manual edits/imports. The standalone updater now returns nonzero for incomplete refreshes while retaining previous prices; diagnostics are in `Web_Report/refresh_status.json`.
+The orchestrator refreshes prices, backs up the workbook (newest 30 retained), generates headlessly, and publishes only after successful validation. It uses a cross-platform lock and 60-minute child-process timeouts. Avoid simultaneous manual edits/imports. Incomplete price refreshes are warnings: previous prices are retained where available, and report generation/publication continues with notes for unavailable funds; diagnostics are in `Web_Report/refresh_status.json`.

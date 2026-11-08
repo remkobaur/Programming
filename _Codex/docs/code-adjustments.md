@@ -1,171 +1,65 @@
-# Python changes for unattended NAS updates
+# Unattended fund report updates
 
-The core changes below are implemented in the existing `FundTools` scripts and the new `update_fund_report.py`. It describes changes to make before following [nas-setup.md](nas-setup.md). The remaining deployment checks must be performed on the NAS.
+The NAS support described here is implemented. See [NAS setup](nas-setup.md) for deployment. Python 3.11+ is required; the scripts use only the standard library.
 
-## Current behavior
+## Implemented workflow
 
-- `fund_online_values.py` downloads prices and rewrites the `OnlineValues` sheet in `Data/Input_Data/fund_manual_values.xlsx`.
-- `fund_history_tool.py` reads that workbook and generates `Data/Web_Report/fund_history_report.html` with inline SVG. No application server is required to view it.
-- Both scripts use Python's standard library. Use Python 3.11+ because `fund_online_values.py` uses `datetime.UTC`.
-- Paths are already based on `pathlib`, and `DATA_PATH`/`DATA_DIR` can select the data directory. In a container, set `DATA_PATH=/app/Data`.
-- The updater reuses cached responses unless `--refresh` or `FUND_ONLINE_REFRESH=true` is set. There is no cache age limit.
-- The updater currently returns zero even if individual downloads fail, and replaces existing online rows with newly collected rows, including error-only rows.
-- Report generation ends by calling Windows-only `os.startfile()` through `open_default_app()`. Linux raises `AttributeError`, which the existing `except OSError` does not catch.
+Run from the repository root:
 
-## 1. Add headless report generation
-
-In `fund_history_tool.py`, add this argument in `build_arg_parser()`:
-
-```python
-parser.add_argument(
-    "--no-open",
-    action="store_true",
-    help="Generate the report without opening a desktop application.",
-)
+```sh
+python FundTools/NAS/refresh_and_publish_fund_report.py --publish-dir /published
 ```
 
-Replace the final unconditional `open_default_app(report_path)` call in `main()` with:
+The orchestrator loads project environment settings, requires an existing nonempty portfolio workbook, and holds an exclusive persistent workbook lock throughout the operation. Locking uses Windows byte locking or Linux `fcntl.flock`; the lock file is not deleted on release.
 
-```python
-if not args.no_open and os.name == "nt":
-    open_default_app(report_path)
-```
+Before refreshing, it backs up the workbook in its sibling `backups` directory and retains the newest 30 backups. It sequentially runs `update_fund_online_values.py --refresh` and `generate_fund_report.py --no-open`, using the current Python interpreter and a 60-minute timeout per child. Fatal process, file, locking, or validation failures return nonzero and prevent publication. Individual missing or failed provider lookups are warnings and allow publication.
 
-This preserves the Windows behavior and allows the same script to complete on a headless Linux NAS.
+The updater merges successful prices by ISIN/date, retaining older imported history. Failed or empty downloads retain previous rows and their timestamps. A fund with no prior rows gets an explicit error row. One-quote results count as incomplete historical refreshes but do not block publication. Nonempty portfolios return success even when some or all providers have no data; missing/empty portfolio configuration and fatal errors still fail. Previous quotes are reused when available. Otherwise the report displays a per-fund explanation and warns that portfolio charts may be incomplete. Failure diagnostics and attempt timestamps are stored separately in `Web_Report/refresh_status.json`.
 
-## 2. Make workbook and report writes atomic
+## Validation and atomic writes
 
-`write_xlsx()` currently opens its destination ZIP directly, and `write_html_report()` writes its destination directly. A crash can leave either file incomplete.
+Before publication, quoted prices must have valid dates and finite positive numeric values; future dates and unexpected quote errors are rejected. Explicit error-only rows without a date or price are allowed. Missing history, one-quote results, and empty filtered ranges are nonfatal when the report contains the corresponding data-availability note for every affected fund. Reports with no usable history may be published without SVG charts. No fixed maximum quote age is imposed because funds may have different trading calendars or be sold; live provider freshness still needs deployment verification.
 
-Write to a temporary sibling file, close it successfully, then replace the destination using `os.replace()`. Use `tempfile.mkstemp()` or `NamedTemporaryFile(delete=False)` for unique names and clean up temporary files in `finally` blocks.
+The generated HTML must have opening and closing document, body, head, SVG and table elements, the Fund History heading, the expected portfolio count, and a fund heading for every expected ISIN. These checks detect missing funds and common truncation; they are not a full HTML validator or independent recalculation of every plotted value.
 
-For the workbook, retain the current ZIP-building logic, but target the temporary file and close the ZIP before replacement. For HTML, use a helper such as:
+Workbook and text writes use unique temporary files in the destination directory, close and sync file contents with `os.fsync()`, and then use `os.replace()`. Temporary files are cleaned up on errors. Existing workbook mode bits are retained; published HTML is readable on Linux. Atomic replacement protects against partial files but does not guarantee survival of every power-loss scenario or preservation of filesystem ACLs.
 
-```python
-import tempfile
+Validated HTML is published as both `fund_history_report.html` and `index.html`. Each replacement is atomic, but the pair is not one transaction. Fatal refresh-process, generation and validation failures leave both existing public files untouched; a failure during publication can leave the two URLs on different versions.
 
+## Paths and operation
 
-def atomic_write_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
-    )
-    temporary_path = Path(temporary)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        # Public HTML must remain readable by Web Station.
-        temporary_path.chmod(0o644)
-        os.replace(temporary_path, path)
-    finally:
-        temporary_path.unlink(missing_ok=True)
-```
-
-Use that helper instead of `path.write_text(document, encoding="utf-8")`. Keep private workbook permissions appropriate for private data rather than automatically using public HTML permissions. Replacement requires write permission on the containing directory.
-
-Temporary and destination files must be on the same filesystem for atomic replacement. This protects readers against partial files; it is not a substitute for backups or a guarantee against every power-loss scenario.
-
-## 3. Preserve good prices and signal download failures
-
-Adjust `fund_online_values.py` so a failed provider request cannot silently destroy a fund's previous online history.
-
-Recommended policy:
-
-1. Read existing `OnlineValues` before downloading.
-2. Group old and new rows by ISIN.
-3. On a failed or empty download, retain that ISIN's previous rows and original quote/update timestamps. Log the refresh failure separately. If no previous rows exist, retain an explicit error row.
-4. For successful downloads, merge prices by `(isin, date)` with fresh values taking precedence. This preserves legacy/imported history outside the downloaded range. Preserve compatible source/symbol metadata with the corresponding rows.
-5. Do not label retained old prices as freshly downloaded. Record refresh attempt time and failure diagnostics separately from the previous successful data timestamp.
-6. Return a nonzero exit code when any requested fund cannot be refreshed successfully. Decide explicitly whether a one-quote current-value fallback counts as failure for this historical report; a conservative scheduled policy treats it as incomplete.
-7. Reject an empty portfolio as a configuration error in scheduled mode instead of publishing an empty report.
-
-The initial publication policy should be conservative: if a refresh is incomplete, leave the previously published HTML untouched, log the affected ISINs, and fail the task. Successfully refreshed workbook data may be retained for the next run, provided failed funds' previous data is preserved.
-
-Do not automatically retry aggressively: providers may rate-limit requests. The existing request delay can remain; add bounded retries only for transient failures if needed.
-
-## 4. Add a single update orchestrator
-
-Create `FundTools/update_fund_report.py` with this interface:
-
-```text
-python FundTools/update_fund_report.py --publish-dir /published
-```
-
-The NAS guide invokes this new file. It should perform these steps in order:
-
-1. Load project environment settings using the existing helper and resolve the configured data directory.
-2. Acquire an exclusive lock for the whole operation. On the Linux NAS, use `fcntl.flock()` with `LOCK_EX | LOCK_NB` on a private persistent lock file. Keep its descriptor open until completion; do not unlink the lock file on release. For a Windows-compatible orchestrator, provide a Windows locking implementation as well.
-3. Require the input workbook to exist and contain a nonempty portfolio. Do not silently create a template in scheduled mode.
-4. Create a timestamped workbook backup under a private backup folder before changing it. Use a unique timestamp/name and a documented retention policy.
-5. Run the updater with fresh online requests:
-
-   ```python
-   subprocess.run(
-       [sys.executable, str(script_dir / "fund_online_values.py"), "--refresh"],
-       check=True,
-   )
-   ```
-
-6. Only on success, run the report generator:
-
-   ```python
-   subprocess.run(
-       [sys.executable, str(script_dir / "fund_history_tool.py"), "--no-open"],
-       check=True,
-   )
-   ```
-
-7. Validate that the generated HTML exists, is nonempty, contains the expected report structure, and reflects a nonempty portfolio. Validate quote dates and errors from workbook data rather than trusting the HTML generation timestamp alone. Different funds can legitimately have different latest trading dates.
-8. Publish the validated HTML to both `fund_history_report.html` and `index.html` in `--publish-dir`. For each destination, copy/write to a unique temporary file **inside the publication directory**, set readable permissions, close it, and call `os.replace()`. Do not move a private temporary file across volumes and assume atomicity. Each URL is replaced atomically; the two replacements are not one transaction.
-9. Print useful status messages and return nonzero if any step fails. Always release the lock. Keep the old public files untouched when downloading, generation, or validation fails.
-
-Use `subprocess.run()` with argument lists and `check=True`, not concatenated shell commands. Use `sys.executable` so child scripts run with the same Python version. A container-wide runtime limit or subprocess timeouts can prevent a stuck job from blocking later updates indefinitely; set limits large enough for all funds and normal provider delays.
-
-The lock protects orchestrator runs. Other writers, such as manual imports or the GUI, must use the same lock to coordinate automatically; otherwise, schedule them separately and avoid editing the workbook during updates.
-
-### Resource use on the 2 GB NAS
-
-Keep the orchestrator, downloads, and report generation sequential. Avoid parallel fund downloads or concurrent report workers initially. The NAS guide limits the entire container to 256 MiB RAM and half a CPU core; this is a starting configuration to measure against the actual workbook. The orchestrator remains resident while a child script runs, so both processes count toward the same memory limit. Release large workbook/HTML objects when they are no longer needed and avoid retaining unnecessary copies of history.
-
-A memory-limit kill can bypass Python exception handlers and cleanup. Keep backups and atomic replacement as described above, and publish only after successful validation. A killed update must not leave a partially written public report. Existing published HTML remains available while the update container is stopped. CPU throttling can extend runtime, so allow for it when choosing subprocess timeouts.
-
-## 5. Keep private output separate from publication
-
-Continue using these internal defaults:
+Default private paths remain:
 
 ```text
 DATA_PATH=/app/Data
 /app/Data/Input_Data/fund_manual_values.xlsx
 /app/Data/Web_Report/fund_history_report.html
 /app/Data/Web_Report/cache/
+/app/Data/Web_Report/refresh_status.json
 ```
 
-Only publish the HTML into `/published`. Do not point the updater's `--output-dir` at the public folder: it places its cache under that directory.
+Only publish HTML to `/published`. Keep caches, workbook backups and diagnostics outside the public document root. Do not set `--output-dir` to the public directory. The default download period is `5y`, with daily (`1d`) price points. Standalone updates reuse caches unless `--refresh` or `FUND_ONLINE_REFRESH=true` is set; there is no cache age limit.
 
-Weekly scheduling controls when downloads occur. Keep the default `--interval 1d` for daily price points unless you deliberately want weekly points. Review `--period` (default `5y`) and preserve older workbook history when merging refreshed data.
+Report generation opens a desktop application only on Windows and unless `--no-open` is supplied. The GUI launcher is `FundTools/GUI/run_fund_history_app.cmd`; import utilities are under `FundTools/Tools`.
 
-Price refreshes do not import new transactions or quantity snapshots automatically. Keep DKB/import workflows separate unless you intentionally add them to the orchestrator with the same locking and backup rules.
+The lock coordinates orchestrator processes only. Run GUI changes, manual workbook edits and imports separately. Refreshes do not import transactions or quantities.
 
-## 6. Verify before deployment
+## Verification
 
-Use a disposable copy of the workbook and a temporary publication directory for these checks. Do not test failure handling against your only live workbook.
+Run the offline suite from the repository root:
 
-- **Headless run:** `fund_history_tool.py --no-open` exits zero under Linux and produces a complete HTML report.
-- **Successful update:** fresh price requests occur, manual sheets are preserved, and both public filenames contain the new report.
-- **Provider failure:** simulate a failed download; old prices remain, the job returns nonzero, and published HTML remains unchanged.
-- **History preservation:** a successful limited-range download does not remove older imported quotes.
-- **Interrupted write:** fail before replacement; the original workbook/report remains readable.
-- **Overlap:** start two orchestrator runs; the second fails clearly without changing data.
-- **Permissions:** Web Station can read published HTML while private files remain outside its document root.
-- **Missing/empty input:** the job fails without replacing the existing published report.
-- **Resource limits:** run with the NAS guide's memory and CPU limits using a realistic workbook; observe peak memory and runtime. On disposable data, verify that a deliberately insufficient memory limit causes a failed task without corrupting the workbook or leaving partial public HTML.
+```sh
+python -B -m unittest discover -s FundTools/tests -v
+```
 
-After these pass, follow [the NAS deployment guide](nas-setup.md), run the DSM task manually once, and then enable its weekly schedule.
+The 15-test suite uses temporary synthetic workbooks, mocked provider downloads and disposable publication directories. It covers real headless report generation, invalid quotes and incomplete reports, date filters, atomic replacement failure, successful publication and backup creation, preservation of public files after child or validation failure, retained old prices/history, missing/empty input and competing-process locking. It also verifies first publication with unavailable ISINs, publication when every fund lacks prices, and rejection of missing data-availability notes. It does not contact live providers or modify production workbooks.
 
-## Implemented compatibility and operational defaults
+Still required on the target NAS:
 
-Existing Windows commands and GUI launcher remain supported. The orchestrator uses Windows or Linux locking conditionally, retains 30 workbook backups, and gives each child process a 60-minute timeout. Refresh diagnostics are stored privately in `Web_Report/refresh_status.json`. Failed refreshes return nonzero and preserve old quotes. The strict historical refresh policy treats one-quote results as incomplete. Manual imports and workbook editing must run separately from the orchestrator.
+- Run the suite under Linux and a complete update with live providers on a disposable workbook.
+- Confirm Web Station can read published HTML and private files are outside its document root with appropriate permissions.
+- Measure runtime and peak memory with a realistic workbook under the NAS guide's 256 MiB memory limit (no hard CPU limit on this NAS).
+- On disposable data, force container termination or an insufficient memory limit and confirm the workbook stays readable and public files are complete.
+- Run the DSM task manually before enabling its weekly schedule.
 
-Automated checks performed locally cover copied-workbook report generation, GUI imports, atomic replacement failure, backup creation, and publication preservation after a child failure. Linux/container memory measurements and provider integration remain deployment checks.
+The local Windows environment has no usable Linux/container runtime, so these deployment checks have not been completed locally.

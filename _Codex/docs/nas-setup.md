@@ -11,16 +11,38 @@ Complete [the code changes](code-adjustments.md) before enabling scheduled updat
 3. Create these folders using File Station. Replace `volume1` throughout this guide if your shares are on another volume.
 
 ```text
-/volume1/docker/fund-report/
+/volume1/web_packages/docker/fund-report/
     FundTools/                  Python scripts
     Data/
         Input_Data/             fund_manual_values.xlsx and optional imports
         Web_Report/             private generated report and cache
     logs/
-/volume1/web/fund-report/        published HTML only
+/volume1/web/fund-report/    published HTML only
 ```
 
 Copy your `FundTools` folder and `Data/Input_Data` into the private project folder. Keep the existing workbook: an empty replacement will not contain your portfolio. Copy optional symbol override CSV files if you use them.
+
+### Release from the local repository
+
+Set `NAS_PROJECT_PATH` in the repository's local `.env`, using `.env.example` as a reference. Use the network-accessible base directory corresponding to `/volume1/web_packages`, containing the private `docker` subfolder. For example:
+
+```dotenv
+NAS_PROJECT_PATH=\\NAS\web_packages
+NAS_PUBLIC_PATH=\\NAS\web\fund-report
+```
+
+Then run from the repository root:
+
+```powershell
+python .\FundTools\release_to_nas.py --dry-run
+python .\FundTools\release_to_nas.py --include-input-data
+```
+
+Replace `NAS` and the share path with your actual Windows network path, or use a mapped drive. The script appends `docker/fund-report` for the private project destination; published HTML belongs in the separate `/volume1/web/fund-report` folder and is produced by the NAS update task. An optional positional argument overrides the base directory setting; otherwise an existing environment variable takes precedence over `.env`. `.env.example` is a template and is not loaded automatically. Only the configured NAS base directory must already be accessible. The script creates missing `docker/fund-report` folders and their required project subfolders. Set `NAS_PUBLIC_PATH` to the separate public UNC path to create that folder too; `--dry-run` lists these without creating them. Authenticate to the share through Windows first; the script does not store credentials.
+
+The script copies the three NAS runtime scripts, the offline verification suite, the NAS shell scripts and documentation, preserving their folder structure. It creates the private data/output/log folders. `--include-input-data` additionally seeds CSV/XLSX input files but skips files already present on the NAS. Backups, legacy input folders, Excel temporary files, `.env`, caches, and generated reports are excluded. GUI files and legacy import utilities are not needed for the scheduled update and are not deployed.
+
+For subsequent code releases, omit `--include-input-data`. Existing NAS data is preserved, and no destination files are deleted. Stop scheduled updates during release: individual code files are replaced atomically, but the complete release is not transactional. The script does not configure Web Station, publish HTML, or run updates on the NAS.
 
 Do not publish the project directory, workbook, cache, logs, backups, or `.env` through Web Station. Do not copy a Windows `.env` unchanged: Windows paths do not work inside the Linux container. The command below supplies `DATA_PATH` explicitly. Add any desired date filters explicitly as container environment variables, and review fixed end dates so future updates are not hidden.
 
@@ -60,7 +82,7 @@ The container requires outbound DNS and HTTPS access to the configured price pro
 
 This workload should be workable with 2 GB RAM, depending on the NAS's other services. The scripts' peak memory usage has not been measured. The Python container runs only during an update and exits afterward; Web Station continues serving the static HTML, and charts render in the visitor's browser. Container Manager itself adds some ongoing background overhead.
 
-The command below starts with a **256 MiB memory limit**, **no additional container swap**, and **half a CPU core**. These are initial limits to validate, not measured requirements. They apply to the update container, including its child processes, rather than to Web Station or Container Manager. The CPU limit may make updates take longer.
+The scripts start with a **256 MiB memory limit** and **no additional container swap**. No hard CPU limit is applied by default: the target NAS rejected Docker NanoCPU limits because its kernel does not support CPU CFS scheduling or the required cgroup. These are initial settings to validate, not measured requirements. Limits apply to the update container, including its child processes. On compatible hosts only, set `FUND_CPUS=0.5` to limit the container to half a CPU core; this can extend runtime.
 
 During the first manual run, watch **DSM Resource Monitor** for RAM use, swap activity, and NAS responsiveness. If the container exceeds its memory limit, it may be killed and the update will fail. Check the logs and memory usage before increasing the limit, for example to `384m` or `512m`; increase both `--memory` and `--memory-swap` to the same value to keep additional container swap disabled. An exit status of 137 can indicate a killed process, but does not by itself prove an out-of-memory condition.
 
@@ -72,46 +94,27 @@ In **Control Panel > Task Scheduler > Create > Scheduled Task > User-defined scr
 
 The task needs permission to run Docker and write the project/publication folders. On a typical DSM installation, running this task as `root` is the straightforward option because Docker requires privileged access. The command below runs trusted local scripts and mounts only the project and publication directory. Do not mount the Docker socket inside the container.
 
-Paste this script into **Task Settings > Run command**:
+The release includes ready-to-run shell scripts under the private project's `FundTools/NAS` folder. Download the image first, then create a temporary manual DSM task (or use an SSH shell) to run the offline verification suite:
 
 ```sh
-#!/bin/sh
-set -eu
-
-PROJECT=/volume1/docker/fund-report
-PUBLIC=/volume1/web/fund-report
-DOCKER=/usr/local/bin/docker
-
-test -x "$DOCKER"
-test -d "$PROJECT/FundTools"
-test -d "$PUBLIC"
-mkdir -p "$PROJECT/logs"
-LOG="$PROJECT/logs/update-$(date +%Y%m%d-%H%M%S).log"
-
-"$DOCKER" run --rm \
-  --name fund-report-update \
-  --memory=256m \
-  --memory-swap=256m \
-  --cpus=0.5 \
-  --user "$(id -u):$(id -g)" \
-  --env DATA_PATH=/app/Data \
-  --env TZ=Europe/Berlin \
-  --volume "$PROJECT:/app" \
-  --volume "$PUBLIC:/published" \
-  --workdir /app \
-  python:3.12-slim \
-  python /app/FundTools/update_fund_report.py \
-    --publish-dir /published >"$LOG" 2>&1 || {
-      cat "$LOG"
-      exit 1
-    }
-
-cat "$LOG"
+/bin/sh /volume1/web_packages/docker/fund-report/FundTools/NAS/verify_runtime.sh
 ```
 
-`update_fund_report.py` is the new orchestrator described in [code-adjustments.md](code-adjustments.md). Validate it with your workbook before using this task. `TZ` requests the local timezone; verify logged timestamps in the selected image, as timezone data availability can affect the result. Scheduling itself uses DSM's timezone.
+This uses synthetic data with no network access, mounts the project read-only, and does not mount the public folder. Inspect the result before performing a real update.
 
-Check the Docker executable location on your NAS if the initial `test -x` fails; adjust `DOCKER` to the installed path. Do not change DSM-managed system files.
+Verification output, including Docker prerequisite failures, is saved to `logs/verify-*.log` in the private project folder and echoed to DSM task output. No log means the script did not start or could not create its log; check the task command, user permissions and DSM task output.
+
+For the update task, paste this into **Task Settings > Run command**:
+
+```sh
+/bin/sh /volume1/web_packages/docker/fund-report/FundTools/NAS/run_update.sh
+```
+
+The shared defaults in `FundTools/NAS/common.sh` set the project/publication paths, Docker executable, image, and resource limits. Optional `FUND_*` environment overrides and manual commands are documented in [the deployment scripts README](../FundTools/NAS/README.md). Scripts are invoked through `/bin/sh`; no executable permission changes are needed. The release script normalizes their line endings for Linux.
+
+`refresh_and_publish_fund_report.py` is the new orchestrator described in [code-adjustments.md](code-adjustments.md). Validate it with your workbook before using this task. `TZ` requests the local timezone; verify logged timestamps in the selected image, as timezone data availability can affect the result. Scheduling itself uses DSM's timezone.
+
+Check the Docker executable location on your NAS if the initial `test -x` fails; set `FUND_DOCKER` to the installed path in the DSM command. Do not change DSM-managed system files.
 
 The fixed container name prevents two copies of this scheduled container from running simultaneously. Do not delete an existing named container to bypass a conflict until you have checked whether an update is still running. The Python lock described in the code guide also protects against other orchestrator invocations.
 
