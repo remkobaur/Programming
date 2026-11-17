@@ -244,3 +244,20 @@ year_profit = portfolio_profit_b - portfolio_profit_a
 
 Year boundary grid lines are drawn at the first plotted date of each new
 calendar year.
+
+## Relative Profit Over The Last 12 Months
+
+The first chart shows cumulative lines from today minus one calendar year through
+today (February 29 maps to February 28). Existing report date filters apply. Each
+fund starts at its first quote with a defined quantity in the window, at 0%.
+Using that starting date a and value V_a, each subsequent quote date t plots:
+
+```text
+100 * (V_t - V_a - I_(a,t] + D_(a,t] + S_(a,t]) / V_a
+```
+
+Cash flows exclude the baseline date and include the current date. Funds need
+a positive starting value and at least two usable quotes. Shorter histories
+start later; lines end at the last available quote without extrapolation.
+Only active funds are eligible; funds marked sold or having a valid sell date
+are excluded. Tooltips identify each baseline date.

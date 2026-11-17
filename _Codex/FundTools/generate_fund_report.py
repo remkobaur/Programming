@@ -1007,6 +1007,80 @@ def svg_portfolio_total_profit_chart(
 """.strip()
 
 
+def svg_trailing_relative_profit_chart(
+    results, quantity_histories, manual_date_values, today=None,
+    width: int = 900, height: int = 420,
+) -> str:
+    today = today or dt.date.today()
+    try:
+        start = today.replace(year=today.year - 1)
+    except ValueError:
+        start = today.replace(year=today.year - 1, day=28)
+    title = "Relative profit over the last 12 months"
+    lines = []
+    for index, (fund, _source, _symbol, quotes, error) in enumerate(results):
+        if error:
+            continue
+        quantities = quantity_histories.get(fund.isin, [])
+        points = []
+        for quote in sorted(quotes, key=lambda q: q.date):
+            if not start.isoformat() <= quote.date <= today.isoformat():
+                continue
+            quantity = defined_quantity_at(quote.date, quantities)
+            if quantity is not None:
+                points.append((quote.date, quote.close * quantity))
+        if len(points) < 2 or points[0][1] <= 0:
+            continue
+        baseline_date, baseline_value = points[0]
+        series = manual_date_values.get(fund.isin, {})
+        values = []
+        for date, value in points:
+            flows = {name: cumulative_value_between(baseline_date, date, series.get(name, []))
+                     for name in ("invest", "dividend", "sell")}
+            profit = (value - baseline_value - flows["invest"] + flows["dividend"] + flows["sell"]) / baseline_value * 100
+            values.append((date, profit))
+        lines.append((fund, FUND_COLORS[index % len(FUND_COLORS)], baseline_date, values))
+    heading = f'<section><h2>{title}</h2><p>{start.isoformat()} through {today.isoformat()}</p>'
+    if not lines:
+        return heading + '<p>No relative profit history available in this period. At least two quotes, defined quantities and a positive starting value are required.</p></section>'
+    left, right, top, bottom = 65, width - 230, 32, height - 50
+    all_values = [v for _, _, _, values in lines for _, v in values] + [0.0]
+    low, high = min(all_values), max(all_values)
+    padding = (high - low) * 0.08 or 1.0
+    low, high = low - padding, high + padding
+    # Aim for about five intervals, with readable percentage increments.
+    raw_step = (high - low) / 5
+    tick_step = 5.0 if raw_step <= 5 else math.ceil(raw_step / 10) * 10.0
+    low = math.floor(low / tick_step) * tick_step
+    high = math.ceil(high / tick_step) * tick_step
+    def x(date):
+        return left + (dt.date.fromisoformat(date) - start).days / (today - start).days * (right - left)
+    def y(value):
+        return bottom - (value - low) / (high - low) * (bottom - top)
+    markup = []
+    for i in range(round((high - low) / tick_step) + 1):
+        value = low + tick_step * i
+        markup.append(f'<line x1="{left}" x2="{right}" y1="{y(value):.1f}" y2="{y(value):.1f}" class="bar-grid"/><text x="{left-8}" y="{y(value)+4:.1f}" text-anchor="end">{value:+.0f}%</text>')
+    for year in range(start.year, today.year + 1):
+        for month in (3, 6, 9, 12):
+            date = dt.date(year, month, 1)
+            if start <= date <= today:
+                tick_x = x(date.isoformat())
+                markup.append(f'<line x1="{tick_x:.1f}" x2="{tick_x:.1f}" y1="{top}" y2="{bottom}" class="bar-grid"/>')
+                markup.append(f'<text x="{tick_x:.1f}" y="{bottom+25}" text-anchor="middle">{date:%Y-%m}</text>')
+    markup.append(f'<line x1="{left}" x2="{right}" y1="{y(0):.1f}" y2="{y(0):.1f}" class="relative-axis-line"/>')
+    for i, (fund, color, baseline, values) in enumerate(lines):
+        label = html.escape(fund.name or fund.isin)
+        coords = " ".join(f"{x(date):.1f},{y(value):.1f}" for date, value in values)
+        markup.append(f'<polyline points="{coords}" fill="none" stroke="{color}" stroke-width="2"/>')
+        for date, value in values:
+            markup.append(f'<circle cx="{x(date):.1f}" cy="{y(value):.1f}" r="4" fill="transparent"><title>{label}: {date}: {value:+.1f}% (baseline {baseline})</title></circle>')
+        legend_y = top + 16 + i * 20
+        markup.append(f'<rect x="{right+20}" y="{legend_y-10}" width="12" height="12" fill="{color}"/><text x="{right+38}" y="{legend_y}" class="yearly-profit-legend">{label}</text>')
+    height = max(height, top + 30 + len(lines) * 20)
+    return heading + f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="{title}">' + ''.join(markup) + '</svg></section>'
+
+
 def yearly_relative_profit_points(
     fund: Fund,
     quotes: list[Quote],
@@ -1762,6 +1836,12 @@ def write_html_report(
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     charts = [
+        svg_trailing_relative_profit_chart(
+            [result for result in results
+             if not is_sold_fund(result[0].isin, statuses, sell_dates)],
+            quantity_histories,
+            manual_date_values,
+        ),
         svg_portfolio_pie_chart(results, quantity_histories),
         svg_portfolio_profit_bar_chart(results, quantity_histories, manual_date_values),
         svg_yearly_relative_profit_bar_chart(results, quantity_histories, manual_date_values),
